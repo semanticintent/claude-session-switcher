@@ -1,0 +1,30 @@
+{
+  "name": "claude-session-switcher",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "A Claude Code mod: paged, filterable, taggable session switcher",
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "node --experimental-strip-types test/scanner.test.ts",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.0",
+    "@types/react": "19.3.0",
+    "ink": "7.1.1",
+    "react": "19.3.0",
+    "typescript": "7.0.2"
+  },
+  "peerDependencies": {
+    "ink": ">=6",
+    "react": ">=18"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "claude-mod",
+    "cli",
+    "ink",
+    "sessions"
+  ]
+}

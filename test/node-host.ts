@@ -21,7 +21,9 @@ export function nodeHost(root: string): Host {
       return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
     },
     async linesFrom(path, from, max) {
-      return linesOf(path).slice(from - 1, from - 1 + max);
+      const all = linesOf(path);
+      const lines = all.slice(from - 1, from - 1 + max);
+      return { lines, sawBytes: from - 1 < all.length };
     },
     async sample(path, bytes, end) {
       const buf = readFileSync(path);

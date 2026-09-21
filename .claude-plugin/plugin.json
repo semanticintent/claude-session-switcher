@@ -2,5 +2,21 @@
   "name": "session-switcher",
   "version": "0.3.0",
   "description": "A paged, filterable, taggable switcher over your recent Claude Code sessions, with a per-row activity strip showing when each one was busy. Resumes in the session's own directory.",
-  "author": { "name": "Michael Shatny" }
+  "author": {
+    "name": "Michael Shatny"
+  },
+  "userConfig": {
+    "commandName": {
+      "type": "string",
+      "default": "switcher",
+      "description": "Slash command that opens the switcher. Tried first; if the name is taken, the built-in keeps it and the mod falls back.",
+      "title": "Command name"
+    },
+    "refresh": {
+      "type": "number",
+      "default": 40,
+      "description": "How many changed transcripts to re-read per open. The rest are served from the cached index.",
+      "title": "Transcripts re-read per open"
+    }
+  }
 }

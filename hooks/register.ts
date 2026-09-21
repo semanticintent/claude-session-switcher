@@ -4,7 +4,7 @@
 // Written against mods/types/claude-code.d.ts (Claude Code 2.1.277). The
 // surface is early access and may change between releases; regenerate the
 // declarations with /plugin-types rather than trusting this file's vintage.
-import type { EngineInterface, On } from "claude-code";
+import type { EngineInterface, On, PluginOptions } from "claude-code";
 import { wholeLines, PROJECTS, type FileInfo, type Host, type Store } from "./host.ts";
 import { cachedSessions, sync, type Session } from "./scan.ts";
 import { loadMeta, saveMeta, setMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
@@ -33,6 +33,7 @@ const state = {
   page: 0,
   mode: "resume" as "resume" | "tag",
   editing: null as { id: string; text: string } | null,
+  refresh: 40,
 };
 
 const model = (): Model => ({
@@ -51,7 +52,7 @@ async function refresh($: EngineInterface): Promise<void> {
       byId.set(s.id, s);
       state.sessions = [...byId.values()].sort((a, b) => b.lastActive - a.lastActive);
       $.ui.invalidate("ui.render");
-    });
+    }, { refresh: state.refresh });
     pruneMeta(state.meta, state.sessions);
     await saveMeta(store, state.meta);
   } catch {
@@ -72,7 +73,13 @@ async function resume($: EngineInterface, s: Session): Promise<void> {
   await $.process.run(["claude", "--resume", s.id], { cwd: s.projectPath }).catch(() => undefined);
 }
 
-export function register(on: On) {
+export function register(on: On, options: PluginOptions) {
+  // What the manifest's `userConfig` declares, as the person set it in
+  // /config. The ordered fallback below still applies: a name they chose that
+  // a built-in already owns costs them that candidate, not the mod.
+  const chosen = typeof options.commandName === "string" ? options.commandName : null;
+  const refreshCount = typeof options.refresh === "number" ? options.refresh : undefined;
+
 
   on("session.start", async ($, e, next) => {
     // The plugin doesn't know where home is; the engine does.
@@ -110,7 +117,11 @@ export function register(on: On) {
           // range is printed, which on a 226 MB transcript is the whole cost
           // again (0.04s vs 0.00s measured).
           const last = from + max - 1;
-          return wholeLines(await run(["sed", "-n", `${from},${last}p;${last + 1}q`, path]) + "\n");
+          const stdout = await run(["sed", "-n", `${from},${last}p;${last + 1}q`, path]);
+          // Measured: the engine cuts stdout at 4 MiB. wholeLines drops the
+          // partial tail, and `sawBytes` lets the scanner recognise the one
+          // case that cut hides — a single line bigger than the whole limit.
+          return { lines: wholeLines(stdout + "\n"), sawBytes: stdout.length > 0 };
         },
 
         async sample(path, bytes, end) {
@@ -126,9 +137,10 @@ export function register(on: On) {
         set: (key, value) => $.store.set(key, value),
       };
       const config = await loadConfig(state.store);
+      state.refresh = refreshCount ?? config.refresh;
       state.commandName = await registerFirst(
         (spec) => $.command.register(spec),
-        config.commands,
+        chosen ? [chosen, ...config.commands] : config.commands,
         DESCRIPTION,
       );
       // Every candidate taken is survivable: the pane's own hotkeys still work

@@ -21,7 +21,7 @@ const BIN_MS = 5 * 60_000;              // activity histogram resolution
 const HEAD_BYTES = 256 * 1024;          // enough for the opening prompt + cwd + branch
 const TAIL_BYTES = 1024 * 1024;         // enough for the latest ai-title + last activity
 const FULL_SCAN_MAX = 8 * 1024 * 1024;  // above this, sample head+tail instead
-const LINES_PER_READ = 5_000;           // bounded: stdout is cut at the output limit
+const LINES_PER_READ = 5_000;           // bounded: stdout is cut at 4 MiB (measured)
 const READS_PER_FILE = 8;               // …so a huge delta catches up over a few opens
 const FILES_CAP = 200;                  // stop collecting distinct edited paths here
 
@@ -125,11 +125,16 @@ async function scan(host: Host, f: FileInfo, cached?: Entry): Promise<Entry> {
     return e;
   }
 
-  // Bounded per read, because stdout is cut at the engine's output limit; a
-  // file that gained more than we take catches up over the next few opens.
+  // Bounded per read, because the engine cuts stdout at 4 MiB; a file that
+  // gained more than we take catches up over the next few opens.
+  //
+  // A read that returned bytes but no complete line means one line is larger
+  // than the whole limit, so it can never come back whole. Stepping over it
+  // costs that record; not stepping over it stalls the file for good.
   for (let i = 0; i < READS_PER_FILE; i++) {
-    const lines = await host.linesFrom(f.path, e.lines + 1, LINES_PER_READ);
-    if (!lines.length) break;
+    const { lines, sawBytes } = await host.linesFrom(f.path, e.lines + 1, LINES_PER_READ);
+    if (!sawBytes) break;                       // end of file
+    if (!lines.length) { e.lines += 1; continue; }  // see below
     for (const line of lines) fold(line, e);
     e.lines += lines.length;
     if (lines.length < LINES_PER_READ) break;

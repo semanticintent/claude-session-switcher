@@ -51,10 +51,13 @@ Instead:
    the extractor changes, so the cache can't serve stale titles forever. This is
    lifted from trailant's indexer. The index lives in `$.store`, the engine's own
    key-value store.
-2. **Append-only reads.** Transcripts only grow, so a session that gained 40 lines
-   is read from line `cached.lines + 1`, not line 1. A file that shrank is re-read
-   whole. Each read is bounded, because `$.process.run` cuts stdout at the output
-   limit — a big delta catches up over the next few opens rather than failing.
+2. **Append-only reads.** The engine cuts a subprocess's stdout at 4 MiB — measured,
+   not documented: the largest capture came back at 3.99 MiB. Reads are bounded so
+   that cut is routine rather than exceptional, and a read that returns bytes but no
+   whole line (one record larger than the entire limit) steps over that record
+   instead of stalling the file forever. Transcripts only grow, so a session that gained 40 lines
+   Transcripts only grow, so a session that gained 40 lines is read from line
+   `cached.lines + 1`, not line 1. A file that shrank is re-read whole.
    `test/scanner.test.ts` pins the invariant: incremental re-index === full re-index.
 3. **No `JSON.parse` in the hot loop.** Every field a row needs is pulled with a
    regex off the raw line. The only line ever parsed is the single opening user
@@ -110,11 +113,9 @@ candidates and keeps the first the engine accepts:
 
 If a name is taken, that registration fails and the next is tried; if all three are
 taken, the keybinding still opens the switcher, so it degrades rather than breaks.
-Override any of it in `~/.config/claude-session-switcher/config.json`:
-
-```json
-{ "commands": ["switcher"], "keybinding": "ctrl+g", "refresh": 40 }
-```
+The command name and the refresh count are declared as `userConfig` in the manifest,
+so they're editable from `/config` rather than a hidden file. A name chosen there is
+tried first and still falls back if a built-in owns it.
 
 This is upstream's own idiom, not an invention: `$.command.register` throws when a
 name is taken, and Anthropic's `diff` mod catches exactly that to cede `/diff`
@@ -135,8 +136,31 @@ licence over them that isn't mine to give. `npm run types` fetches the copy from
 writes the declarations for the build you're actually on.
 
 ## Before it will run
-`claude plugin validate .` **passes** on Claude Code 2.1.278, and prints the mod's
-entire reach before any session loads it:
+**It runs.** On Claude Code 2.1.278 with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, the
+engine loads the module, admits it, raises `session.start`, registers the command
+and opens the pane:
+
+```
+hooks module session-switcher@inline loaded (worker, environment 1, tier user);
+  events: session.start,command.run,ui.render,ui.close
+plugin.register: session-switcher — admitted
+$.command.register (session-switcher): /switcher listed
+ui.open session-switcher (unasked, unmeasured columns): placed
+$.store.set (session-switcher@inline): session-index
+```
+
+Note *which* name it took. `session-switcher:sessions` was refused and `/switcher`
+was accepted — the ordered fallback firing for real, unprompted.
+
+Measured over the whole 372 MB store, in the engine, not a benchmark harness:
+
+| | subprocess reads | bytes read |
+|---|---|---|
+| first open (cold index) | 52 | 15.2 MB |
+| next open (nothing new) | 4 | — |
+
+`claude plugin validate .` passes, and prints the mod's entire reach before any
+session loads it:
 
 ```
 hooks:      session.start, command.run, ui.render{component=Pane}, ui.close
@@ -147,12 +171,15 @@ env writes: nothing
 env reads:  HOME
 ```
 
-Mods are early access and behind a flag, so the pane itself has not been drawn by a
-real engine yet — validation and the unit tests are as far as this goes today:
+```
+npm run types && npm run check
+claude plugin validate .
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir .
+```
 
-```
-CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude
-```
+What the live run has *not* covered: the pane's actual drawing. A print-mode session
+has no surface, so `ui.render` never fires there — the view is proven by its unit
+tests and by `ui.open` being placed, not by pixels.
 
 Known unknowns: resume shells out to `claude --resume <id>` with the session's cwd,
 because no `$.session.resume` appears on the surface; and `sed`/`head`/`tail` mean

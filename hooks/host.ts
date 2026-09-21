@@ -19,8 +19,12 @@ export type FileInfo = { path: string; size: number; mtimeMs: number };
 export type Host = {
   /** Session transcripts, newest first. Exactly one level deep. */
   list(): Promise<FileInfo[]>;
-  /** Lines `from` (1-based) onward, at most `max` of them. */
-  linesFrom(path: string, from: number, max: number): Promise<string[]>;
+  /**
+   * Lines `from` (1-based) onward, at most `max` of them. `sawBytes` says
+   * whether the read returned anything at all, which is how the scanner tells
+   * "end of file" from "one line too big to come back whole".
+   */
+  linesFrom(path: string, from: number, max: number): Promise<{ lines: string[]; sawBytes: boolean }>;
   /** Whole lines within the first / last `bytes` of the file. */
   sample(path: string, bytes: number, end: "head" | "tail"): Promise<string[]>;
 };

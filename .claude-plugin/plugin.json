@@ -1,0 +1,6 @@
+{
+  "name": "session-switcher",
+  "version": "0.3.0",
+  "description": "A paged, filterable, taggable switcher over your recent Claude Code sessions, with a per-row activity strip showing when each one was busy. Resumes in the session's own directory.",
+  "author": { "name": "Michael Shatny" }
+}

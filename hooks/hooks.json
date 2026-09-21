@@ -1,0 +1,4 @@
+{
+  "description": "The session switcher: its command, the pane's drawing, and the transcript index behind it",
+  "modules": ["./register.ts"]
+}

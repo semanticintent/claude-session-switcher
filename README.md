@@ -14,18 +14,33 @@ Each row shows:
 - on the selected row: the opening prompt, prompt count, files edited
 
 ## Keys
+
+There is no raw key hook on the mod surface, so the interaction is built from what
+the element table offers — and it fits: the page holds ten rows, and a `Button`
+hotkey is exactly one digit.
+
 | Key | Action |
 |---|---|
 | type | filter across title, prompt, project, branch, `#tag` |
-| ↑ ↓ | move · ← → page |
-| Enter | resume session (in its own directory) |
-| Tab | rename/tag — e.g. `#auth #client-x Token refresh bug` |
-| Esc | clear filter, then close |
+| 1–9, 0 | resume that row, in its own directory |
+| t | tag mode — a digit then opens that row's tag field |
+| n / p | next / previous page |
+| Esc | close the pane |
+
+A surface whose element table has no `Input` still draws its rows; the filter
+degrades to a label rather than the pane refusing to draw.
+
+## Layout
+
+An upstream-shaped plugin: `.claude-plugin/plugin.json`, `hooks/hooks.json` naming
+`hooks/register.ts`, and `types/claude-code.d.ts` vendored from Claude Code 2.1.277.
+`register(on)` hooks `session.start` (register the command), `command.run` (open the
+pane), `ui.render` (draw it) and `ui.close`.
 
 ## How it stays fast
 
-Transcripts are big — this machine's store is 372 MB across 13 sessions, one file
-of which is 226 MB. Reading them the obvious way (`readFile` + `split("\n")` +
+Transcripts are big. Measured on one real, heavily used store: 372 MB across 13
+sessions, the largest single file 226 MB. Reading them the obvious way (`readFile` + `split("\n")` +
 `JSON.parse` per line) takes ~1 GB of heap on that one file alone and blocks the
 overlay for the whole time.
 
@@ -34,9 +49,12 @@ Instead:
 1. **stat first, cache on disk.** Every known file is `stat`ed on open (cheap) and
    only re-read if its mtime or size moved. `INDEX_VERSION` forces a re-parse when
    the extractor changes, so the cache can't serve stale titles forever. This is
-   lifted from [trailant](../trailant)'s indexer.
-2. **Append-only reads.** Transcripts only grow, so a session that gained 40 KB is
-   read from byte `cached.size`, not byte 0. A file that shrank is re-read whole.
+   lifted from trailant's indexer. The index lives in `$.store`, the engine's own
+   key-value store.
+2. **Append-only reads.** Transcripts only grow, so a session that gained 40 lines
+   is read from line `cached.lines + 1`, not line 1. A file that shrank is re-read
+   whole. Each read is bounded, because `$.process.run` cuts stdout at the output
+   limit — a big delta catches up over the next few opens rather than failing.
    `test/scanner.test.ts` pins the invariant: incremental re-index === full re-index.
 3. **No `JSON.parse` in the hot loop.** Every field a row needs is pulled with a
    regex off the raw line. The only line ever parsed is the single opening user
@@ -69,10 +87,9 @@ Verified against real files here, not assumed:
   `"type":"user"` lines carrying a `tool_result` are a tool's reply, not a turn.
 
 ## Where it writes
-`~/.config/claude-session-switcher/` — `index.json` (the cache) and `meta.json`
-(your tags and titles). Deliberately **not** `~/.claude`, which is off-limits.
-Both are written temp-then-rename, so a crash can't truncate your tags.
-Change `HOME_DIR` in `src/cache.ts` to move them.
+Nowhere on disk. The index, your tags and the config all live in `$.store`, the
+engine's own per-plugin key-value store (JSON, 4 MiB cap — the index was 53 KB for
+13 sessions). Transcripts are only ever read.
 
 Claude Code *does* have session names (`~/.claude/sessions/*.json`, a user-set
 `name` where `nameSource` isn't `"derived"`); it does not have tags. Tags, and
@@ -84,8 +101,8 @@ lookup falls back to it — otherwise your tags orphan the first time you resume
 
 `/sessions` is exactly the kind of generic name a future release could claim —
 `--resume` already ships a searchable picker, so a built-in `/sessions` is a short
-walk away. The mod therefore never hard-codes one name. `src/config.ts` lists
-candidates and keeps the first the host accepts:
+walk away. The mod therefore never hard-codes one name. `hooks/config.ts` lists
+candidates and keeps the first the engine accepts:
 
     session-switcher:sessions   → qualified; can't collide
     switcher                    → short alias
@@ -99,22 +116,52 @@ Override any of it in `~/.config/claude-session-switcher/config.json`:
 { "commands": ["switcher"], "keybinding": "ctrl+g", "refresh": 40 }
 ```
 
-Plugin-provided skills are already addressed as `plugin:skill`, so if Mods namespace
-commands the same way, the qualified name is the one that's safe forever.
+This is upstream's own idiom, not an invention: `$.command.register` throws when a
+name is taken, and Anthropic's `diff` mod catches exactly that to cede `/diff`
+— *"`/diff` once the built-in stands down."*
 
 ## Development
 
 ```
-npm install     # typescript, ink, react, types — dev only; the CLI provides the runtime
-npm run check   # tsc (strict, incl. exactOptionalPropertyTypes + noUncheckedIndexedAccess) + tests
+npm install     # typescript + node types only; the surface supplies the elements
+npm run types   # fetch Anthropic's claude-code.d.ts (not vendored — see below)
+npm run check   # tsc against those declarations, then the tests
 ```
 
+`types/claude-code.d.ts` is Anthropic's file and is deliberately **not** committed
+here: this repo is MIT, and shipping their declarations inside it would imply a
+licence over them that isn't mine to give. `npm run types` fetches the copy from
+`anthropics/claude-code`. Once `/plugin-types` ships in the CLI, prefer that — it
+writes the declarations for the build you're actually on.
+
 ## Before it will run
-`src/mod.tsx` uses guessed hook names (`command:/sessions`, `$.ui.overlay`,
-`$.session.resume`). Mods are pre-release; compare against a built-in mod in
-`anthropics/claude-code/mods` and swap in the real calls. Note that resume needs
-the session's `cwd`, not just its id. Everything under `src/sessions.ts`,
-`src/cache.ts` and `src/tags.ts` is plain Node and is covered by `npm test`.
+`claude plugin validate .` **passes** on Claude Code 2.1.278, and prints the mod's
+entire reach before any session loads it:
+
+```
+hooks:      session.start, command.run, ui.render{component=Pane}, ui.close
+calls:      $.command.register, $.env.get, $.fs.list, $.fs.stat, $.process.run,
+            $.store.get, $.store.set, $.ui.close, $.ui.invalidate, $.ui.log,
+            $.ui.open, $.ui.resolve
+env writes: nothing
+env reads:  HOME
+```
+
+Mods are early access and behind a flag, so the pane itself has not been drawn by a
+real engine yet — validation and the unit tests are as far as this goes today:
+
+```
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude
+```
+
+Known unknowns: resume shells out to `claude --resume <id>` with the session's cwd,
+because no `$.session.resume` appears on the surface; and `sed`/`head`/`tail` mean
+the reader is POSIX-only until there's a portable ranged read.
+
+`/plugin-types` isn't installed in this build, so the declarations used here are the
+2.1.277 copy from upstream (`npm run types`). Regenerate with `/plugin-types` once it
+exists rather than trusting a snapshot — the header says the surface changes between
+releases.
 
 ```
 npm run check

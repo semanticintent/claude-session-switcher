@@ -9,24 +9,28 @@
 // the session you just tagged. Every record therefore also carries a
 // fingerprint — project + opening prompt, which survive a resume — and
 // lookup falls back to it.
-import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
-import { join } from "node:path";
-import { HOME_DIR, saveJson } from "./cache.ts";
-import type { Session } from "./sessions.ts";
+import type { Store } from "./host.ts";
+import type { Session } from "./scan.ts";
+
+export const META_KEY = "session-meta";
 
 export type Meta = { title?: string | undefined; tags: string[]; fp?: string | undefined };
 
-const FILE = join(HOME_DIR, "meta.json");
-
-export const fingerprint = (s: Session) =>
-  createHash("sha1").update(`${s.projectPath}\u0000${s.firstPrompt.slice(0, 200)}`).digest("hex").slice(0, 16);
-
-export async function loadMeta(): Promise<Record<string, Meta>> {
-  try { return JSON.parse(await readFile(FILE, "utf8")); } catch { return {}; }
+// No node:crypto in a hooks environment, and none needed: this only has to
+// tell two sessions apart, not resist anybody.
+export function fingerprint(s: Session): string {
+  const text = `${s.projectPath}\u0000${s.firstPrompt.slice(0, 200)}`;
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36) + ":" + text.length.toString(36);
 }
 
-export const saveMeta = (all: Record<string, Meta>) => saveJson(FILE, all);
+export async function loadMeta(store: Store): Promise<Record<string, Meta>> {
+  return ((await store.get(META_KEY).catch(() => null)) ?? {}) as Record<string, Meta>;
+}
+
+export const saveMeta = (store: Store, all: Record<string, Meta>) =>
+  store.set(META_KEY, all).catch(() => undefined);
 
 /** By id, else by fingerprint — so a resumed session keeps its tags. */
 export function metaFor(s: Session, all: Record<string, Meta>): Meta | undefined {

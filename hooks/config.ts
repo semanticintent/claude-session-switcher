@@ -10,14 +10,14 @@
 // `plugin:skill`. If Mods namespace commands the same way, the qualified name
 // below is the one that can never collide, and the short aliases are a
 // convenience the CLI is free to take back.
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { HOME_DIR } from "./cache.ts";
+import type { Store } from "./host.ts";
+
+export const CONFIG_KEY = "session-switcher-config";
 
 export type Config = {
   /** Tried in order; the first that registers wins. */
   commands: string[];
-  /** Fallback that never depends on a command name being free. */
+  /** Hotkey that opens the pane's rows; the pane itself needs no command name. */
   keybinding: string;
   /** Files opened per refresh before the rest are left to the cache. */
   refresh: number;
@@ -31,9 +31,9 @@ export const DEFAULTS: Config = {
   refresh: 40,
 };
 
-export async function loadConfig(): Promise<Config> {
+export async function loadConfig(store: Store): Promise<Config> {
   try {
-    const raw = JSON.parse(await readFile(join(HOME_DIR, "config.json"), "utf8")) as Partial<Config>;
+    const raw = ((await store.get(CONFIG_KEY)) ?? {}) as Partial<Config>;
     return {
       commands: Array.isArray(raw.commands) && raw.commands.length ? raw.commands : DEFAULTS.commands,
       keybinding: typeof raw.keybinding === "string" ? raw.keybinding : DEFAULTS.keybinding,
@@ -45,22 +45,24 @@ export async function loadConfig(): Promise<Config> {
 }
 
 /**
- * Registers the first candidate the host accepts. A name already taken should
- * make *that* registration fail, not the mod — and if every candidate is
- * spoken for, the keybinding still works, so the switcher degrades instead of
- * disappearing.
+ * Registers the first candidate the engine accepts.
+ *
+ * `registerCommand` throws when a name is already spoken for — this is the
+ * documented way a mod finds out, and Anthropic's own `diff` mod does exactly
+ * this to cede `/diff` to the built-in "once the built-in stands down". So a
+ * taken name costs us that candidate, not the mod.
  */
-export function registerFirst(
-  hook: (event: string, handler: any) => void,
+export async function registerFirst(
+  register: (spec: { name: string; description: string }) => Promise<unknown>,
   candidates: string[],
-  handler: any,
-): string | null {
+  description: string,
+): Promise<string | null> {
   for (const name of candidates) {
     try {
-      hook(`command:/${name}`, handler);
+      await register({ name, description });
       return name;
     } catch {
-      /* taken, or unsupported — try the next one */
+      /* taken, or refused — try the next one */
     }
   }
   return null;

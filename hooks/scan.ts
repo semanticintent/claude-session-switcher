@@ -4,26 +4,46 @@
 // Three things keep it light:
 //   1. stat-first. Files are ranked by mtime and only the newest are ever
 //      opened; everything else is served from the cached index.
-//   2. Append-only reads. Transcripts only grow, so a file that gained
-//      40 KB since last time is read from byte `cached.size`, not byte 0.
+//   2. Append-only reads. Transcripts only grow, so a file that gained 40
+//      lines is read from line `cached.lines + 1`, not line 1.
 //   3. No JSON.parse in the hot loop. Every field the row needs is pulled
 //      with a regex over the raw line; the only line ever parsed is the
 //      single first user prompt. Attachment and tool-output lines — the
 //      bulk of the bytes — are matched and discarded without being decoded.
-import { createReadStream } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, basename } from "node:path";
-import { loadIndex, saveIndex, INDEX_VERSION, type Entry } from "./cache.ts";
+//
+// Nothing here touches the file system directly: see hooks/host.ts.
+import type { Host, Store, FileInfo } from "./host.ts";
 
-// Overridable so the scanner can be exercised against a fixture tree.
-const ROOT = process.env.SESSION_SWITCHER_ROOT || join(homedir(), ".claude", "projects");
+export const INDEX_VERSION = 2;
+export const INDEX_KEY = "session-index";
 
-const BIN_MS = 5 * 60_000;                  // activity histogram resolution
-const HEAD_BYTES = 256 * 1024;              // enough for the opening prompt + cwd + branch
-const TAIL_BYTES = 4 * 1024 * 1024;         // enough for the latest ai-title + last activity
-const FULL_SCAN_MAX = 64 * 1024 * 1024;     // above this, sample head+tail instead
-const FILES_CAP = 200;                      // stop collecting distinct edited paths here
+const BIN_MS = 5 * 60_000;              // activity histogram resolution
+const HEAD_BYTES = 256 * 1024;          // enough for the opening prompt + cwd + branch
+const TAIL_BYTES = 1024 * 1024;         // enough for the latest ai-title + last activity
+const FULL_SCAN_MAX = 8 * 1024 * 1024;  // above this, sample head+tail instead
+const LINES_PER_READ = 5_000;           // bounded: stdout is cut at the output limit
+const READS_PER_FILE = 8;               // …so a huge delta catches up over a few opens
+const FILES_CAP = 200;                  // stop collecting distinct edited paths here
+
+export type Entry = {
+  v: number;
+  path: string;
+  lines: number;       // complete lines already folded into this record
+  size: number;
+  mtimeMs: number;
+  id: string;
+  aiTitle?: string | undefined;   // newest wins — titles regenerate mid-session
+  summary?: string | undefined;   // legacy fallback; real transcripts have none
+  firstPrompt?: string | undefined;
+  cwd?: string | undefined;
+  branch?: string | undefined;
+  prompts: number;     // human turns, not every timestamped line
+  files: string[];     // distinct file_path values seen in Edit/Write tool calls
+  bins: Record<string, number>;   // wall-clock activity histogram, sparse
+  firstTs?: number | undefined;
+  lastTs?: number | undefined;
+  partial: boolean;    // a huge file we sampled rather than read whole
+};
 
 export type Session = {
   id: string;
@@ -36,37 +56,44 @@ export type Session = {
   prompts: number;
   filesTouched: number;
   activity: number[];     // 24 cells over the session's lifetime
-  partial: boolean;       // strip/counts cover a sampled window, not the whole file
+  partial: boolean;
 };
 
-/** Instant: stat + cached index only, no transcript is opened. */
-export async function loadSessions(limit = 200): Promise<Session[]> {
-  const [files, index] = await Promise.all([listFiles(), loadIndex()]);
-  return files
-    .slice(0, limit)
+export async function loadIndex(store: Store): Promise<Record<string, Entry>> {
+  const all = ((await store.get(INDEX_KEY).catch(() => null)) ?? {}) as Record<string, Entry>;
+  // Drop anything written by an older extractor rather than trusting it.
+  for (const [k, e] of Object.entries(all)) if (e?.v !== INDEX_VERSION) delete all[k];
+  return all;
+}
+
+/** Instant: the cached index only, no transcript is opened. */
+export async function cachedSessions(store: Store, host: Host, limit = 200): Promise<Session[]> {
+  const [files, index] = await Promise.all([host.list(), loadIndex(store)]);
+  return files.slice(0, limit)
     .map((f) => toSession(index[f.path], f))
     .filter((s): s is Session => s !== null);
 }
 
 /**
- * Brings the index up to date, newest file first, invoking `onRow` as each
- * one lands so the open list fills in progressively instead of blocking.
- * `refresh` files are opened at most; the rest keep their cached rows.
+ * Brings the index up to date, newest file first, invoking `onRow` as each one
+ * lands so the open pane fills in progressively instead of blocking.
  */
-export async function syncSessions(
+export async function sync(
+  store: Store,
+  host: Host,
   onRow: (s: Session) => void,
   { refresh = 40 }: { refresh?: number } = {},
 ): Promise<void> {
-  const [files, index] = await Promise.all([listFiles(), loadIndex()]);
+  const [files, index] = await Promise.all([host.list(), loadIndex(store)]);
   let touched = 0;
-  let scanned = 0;
+  let opened = 0;
 
   for (const f of files) {
     const cached = index[f.path];
     if (cached && cached.mtimeMs === f.mtimeMs && cached.size === f.size) continue;
-    if (scanned++ >= refresh) break;
+    if (opened++ >= refresh) break;
 
-    const entry = await scan(f, cached).catch(() => null);
+    const entry = await scan(host, f, cached).catch(() => null);
     if (!entry) continue;
     index[f.path] = entry;
     touched++;
@@ -78,48 +105,34 @@ export async function syncSessions(
   const live = new Set(files.map((f) => f.path));
   for (const k of Object.keys(index)) if (!live.has(k)) { delete index[k]; touched++; }
 
-  if (touched) await saveIndex(index);
+  if (touched) await store.set(INDEX_KEY, index).catch(() => undefined);
 }
 
-// ---------------------------------------------------------------- scanning
-
-type FileInfo = { path: string; size: number; mtimeMs: number };
-
-async function listFiles(): Promise<FileInfo[]> {
-  const out: FileInfo[] = [];
-  for (const dir of await safeReaddir(ROOT)) {
-    // Exactly one level deep: sub-agent transcripts live in a nested
-    // <session-id>/subagents/ directory and are deliberately not sessions.
-    for (const name of await safeReaddir(join(ROOT, dir))) {
-      if (!name.endsWith(".jsonl")) continue;
-      const path = join(ROOT, dir, name);
-      const st = await stat(path).catch(() => null);
-      if (st?.isFile()) out.push({ path, size: st.size, mtimeMs: st.mtimeMs });
-    }
-  }
-  return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
-}
-
-async function scan(f: FileInfo, cached?: Entry): Promise<Entry> {
+async function scan(host: Host, f: FileInfo, cached?: Entry): Promise<Entry> {
   // A file that shrank was rewritten, not appended to — start over.
   const resumable = cached && cached.v === INDEX_VERSION && cached.size <= f.size && !cached.partial;
   const e: Entry = resumable
-    ? { ...cached!, size: cached!.size, mtimeMs: f.mtimeMs, files: [...cached!.files], bins: { ...cached!.bins } }
-    : { v: INDEX_VERSION, path: f.path, size: 0, mtimeMs: f.mtimeMs, id: basename(f.path, ".jsonl"),
-        prompts: 0, files: [], bins: {}, partial: false };
+    ? { ...cached, mtimeMs: f.mtimeMs, size: f.size, files: [...cached.files], bins: { ...cached.bins } }
+    : { v: INDEX_VERSION, path: f.path, lines: 0, size: f.size, mtimeMs: f.mtimeMs,
+        id: idOf(f.path), prompts: 0, files: [], bins: {}, partial: false };
 
-  if (resumable) {
-    // Append-only fast path: read only the bytes that are new.
-    e.size = await scanRange(f.path, e.size, f.size, e, false);
-  } else if (f.size > FULL_SCAN_MAX) {
+  if (!resumable && f.size > FULL_SCAN_MAX) {
     // Too big to read whole on first sight: take the opening prompt from the
     // head and recent activity from the tail, and say so in the row.
-    await scanRange(f.path, 0, Math.min(HEAD_BYTES, f.size), e, false);
-    await scanRange(f.path, Math.max(0, f.size - TAIL_BYTES), f.size, e, true);
+    for (const line of await host.sample(f.path, HEAD_BYTES, "head")) fold(line, e);
+    for (const line of await host.sample(f.path, TAIL_BYTES, "tail")) fold(line, e);
     e.partial = true;
-    e.size = f.size;
-  } else {
-    e.size = await scanRange(f.path, 0, f.size, e, false);
+    return e;
+  }
+
+  // Bounded per read, because stdout is cut at the engine's output limit; a
+  // file that gained more than we take catches up over the next few opens.
+  for (let i = 0; i < READS_PER_FILE; i++) {
+    const lines = await host.linesFrom(f.path, e.lines + 1, LINES_PER_READ);
+    if (!lines.length) break;
+    for (const line of lines) fold(line, e);
+    e.lines += lines.length;
+    if (lines.length < LINES_PER_READ) break;
   }
   return e;
 }
@@ -134,32 +147,7 @@ const RE_AI_TITLE = /"aiTitle":"((?:[^"\\]|\\.)*)"/;
 const RE_SUMMARY = /"summary":"((?:[^"\\]|\\.)*)"/;
 const RE_EDIT = /"name":"(?:Edit|Write|MultiEdit|NotebookEdit)"[^}]*?"file_path":"((?:[^"\\]|\\.)*)"/g;
 
-/** Reads [start, end) as lines; returns the offset after the last complete one. */
-function scanRange(path: string, start: number, end: number, e: Entry, dropFirstPartial: boolean): Promise<number> {
-  return new Promise((resolve, reject) => {
-    if (end <= start) return resolve(start);
-    const stream = createReadStream(path, { start, end: end - 1, encoding: "utf8" });
-    let buf = "";
-    let consumed = start;
-    let first = dropFirstPartial;
-
-    stream.on("data", (chunk) => {
-      buf += chunk;
-      let nl: number;
-      while ((nl = buf.indexOf("\n")) !== -1) {
-        const line = buf.slice(0, nl);
-        buf = buf.slice(nl + 1);
-        consumed += Buffer.byteLength(line, "utf8") + 1;
-        if (first) { first = false; continue; }  // ranged read landed mid-line
-        if (line) fold(line, e);
-      }
-    });
-    stream.on("error", reject);
-    stream.on("end", () => resolve(consumed));
-  });
-}
-
-function fold(line: string, e: Entry) {
+export function fold(line: string, e: Entry) {
   const ts = RE_TS.exec(line)?.[1];
   const t = ts ? Date.parse(ts) : NaN;
 
@@ -207,8 +195,7 @@ function fold(line: string, e: Entry) {
     RE_EDIT.lastIndex = 0;
     for (let m: RegExpExecArray | null; (m = RE_EDIT.exec(line)); ) {
       const p = unescape(m[1] ?? "");
-      if (!p) continue;
-      if (!e.files.includes(p)) e.files.push(p);
+      if (p && !e.files.includes(p)) e.files.push(p);
       if (e.files.length >= FILES_CAP) break;
     }
   }
@@ -218,7 +205,7 @@ function fold(line: string, e: Entry) {
 function firstText(line: string): string | undefined {
   if (line.length > 1_000_000) return undefined;
   try {
-    const c = JSON.parse(line)?.message?.content;
+    const c = (JSON.parse(line) as any)?.message?.content;
     if (typeof c === "string") return c;
     if (Array.isArray(c)) return c.map((b: any) => (typeof b?.text === "string" ? b.text : "")).join(" ");
   } catch { /* malformed line — no prompt from it */ }
@@ -239,17 +226,16 @@ function isSystemWrapper(text: string): boolean {
 
 // ---------------------------------------------------------------- rows
 
-function toSession(e: Entry | undefined, f: FileInfo): Session | null {
+export function toSession(e: Entry | undefined, f: FileInfo): Session | null {
   if (!e || (e.prompts === 0 && !e.aiTitle)) return null;
   // cwd from the transcript is authoritative; the directory name is a lossy
   // fallback (Claude Code maps "/", ".", ":" and "\" all onto "-").
-  const projectPath = e.cwd || decodeProjectDir(basename(dirOf(f.path)));
-  const title = e.aiTitle || e.summary || e.firstPrompt || "Untitled session";
+  const projectPath = e.cwd || decodeProjectDir(dirName(f.path));
   return {
     id: e.id,
-    title: clean(title),
+    title: clean(e.aiTitle || e.summary || e.firstPrompt || "Untitled session"),
     firstPrompt: e.firstPrompt ? clean(e.firstPrompt) : "",
-    project: basename(projectPath) || "?",
+    project: baseName(projectPath) || "?",
     projectPath,
     branch: e.branch,
     lastActive: e.lastTs ?? f.mtimeMs,
@@ -262,7 +248,7 @@ function toSession(e: Entry | undefined, f: FileInfo): Session | null {
 
 /** Re-buckets the sparse wall-clock histogram into 24 cells at read time. */
 function strip(e: Entry, n = 24): number[] {
-  const out = new Array(n).fill(0);
+  const out = new Array<number>(n).fill(0);
   const keys = Object.keys(e.bins);
   if (!keys.length) return out;
   const lo = e.firstTs ?? Number(keys[0]!) * BIN_MS;
@@ -274,9 +260,11 @@ function strip(e: Entry, n = 24): number[] {
   return out;
 }
 
-const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
+// No node:path here either — these are the only two pieces of it we need.
+const baseName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+const dirName = (p: string) => baseName(p.slice(0, p.lastIndexOf("/")));
+const idOf = (p: string) => baseName(p).replace(/\.jsonl$/, "");
 const decodeProjectDir = (name: string) =>
   name.startsWith("-") ? "/" + name.slice(1).replace(/-/g, "/") : name.replace(/-/g, "/");
-const unescape = (s: string) => { try { return JSON.parse(`"${s}"`); } catch { return s; } };
+const unescape = (s: string) => { try { return JSON.parse(`"${s}"`) as string; } catch { return s; } };
 const clean = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-const safeReaddir = (p: string) => readdir(p).catch(() => [] as string[]);

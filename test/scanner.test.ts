@@ -1,16 +1,20 @@
 import { mkdirSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { cachedSessions, sync } from "../hooks/scan.ts";
+import { view, spark, matches, type Model } from "../hooks/view.ts";
+import { setMeta, fingerprint, type Meta } from "../hooks/tags.ts";
+import { nodeHost, memoryStore } from "./node-host.ts";
+
 const T = join(process.env.TMPDIR ?? "/tmp", "session-switcher-fixture");
 rmSync(T, { recursive: true, force: true });
 const dir = join(T, "projects", "-tmp-demo");
 mkdirSync(dir, { recursive: true });
 const FILE = join(dir, "11111111-2222-3333-4444-555555555555.jsonl");
-process.env.SESSION_SWITCHER_ROOT = join(T, "projects");
-process.env.SESSION_SWITCHER_HOME = join(T, "home");
-const { loadSessions, syncSessions } = await import("../src/sessions.ts");
 
+const host = nodeHost(join(T, "projects"));
 const ts = (m: number) => new Date(Date.UTC(2026, 8, 21, 10, m)).toISOString();
-const L = (o: any) => JSON.stringify(o) + "\n";
+const L = (o: unknown) => JSON.stringify(o) + "\n";
+
 const part1 =
   L({ type: "user", timestamp: ts(0), cwd: "/tmp/demo", gitBranch: "main",
       message: { content: "<system-reminder>ignore me</system-reminder>" } }) +
@@ -23,34 +27,57 @@ const part1 =
   L({ type: "last-prompt", timestamp: ts(4), text: "noise" });
 writeFileSync(FILE, part1);
 
-const runs: any[] = [];
-await syncSessions(() => {}, { refresh: 10 });
-runs.push((await loadSessions())[0]!);
+let store = memoryStore();
+await sync(store, host, () => {});
+const first = (await cachedSessions(store, host))[0]!;
 
 // …session continues: more turns, a regenerated title, another file edited.
 appendFileSync(FILE,
   L({ type: "user", timestamp: ts(40), message: { content: "and also the retry path" } }) +
   L({ type: "assistant", timestamp: ts(41), message: { content: [{ type: "tool_use", name: "Write", input: { file_path: "/tmp/demo/b.ts" } }] } }) +
   L({ type: "ai-title", timestamp: ts(42), aiTitle: "Token refresh and retry" }));
-await syncSessions(() => {}, { refresh: 10 });
-const incremental = (await loadSessions())[0]!;
+await sync(store, host, () => {});
+const incremental = (await cachedSessions(store, host))[0]!;
 
 // Same file, but indexed from scratch — the two must agree.
-rmSync(join(T, "home"), { recursive: true, force: true });
-await syncSessions(() => {}, { refresh: 10 });
-const fromScratch = (await loadSessions())[0]!;
+store = memoryStore();
+await sync(store, host, () => {});
+const fromScratch = (await cachedSessions(store, host))[0]!;
 
-const eq = JSON.stringify(incremental) === JSON.stringify(fromScratch);
+// The view is a pure function, so it can be drawn with recording stubs.
+const drawn: string[] = [];
+const stub = (name: string) => (props: any) => {
+  const kids = [props.label, props.placeholder, props.children].flat(3).filter((c) => typeof c === "string");
+  drawn.push(`${name}:${kids.join("")}`);
+  return { name, props } as any;
+};
+const meta: Record<string, Meta> = {};
+setMeta(incremental, meta, "#auth Token refresh");
+const model: Model = { sessions: [incremental], meta, query: "", page: 0, mode: "resume", editing: null, syncing: false };
+const actions = { filter() {}, pick() {}, toggleMode() {}, turnPage() {}, editTags() {} };
+view({ Box: stub("Box"), Text: stub("Text"), Button: stub("Button"), Input: stub("Input") }, model, actions);
+const text = drawn.join("\n");
+
+// A surface whose table has no Input must still draw its rows.
+drawn.length = 0;
+view({ Box: stub("Box"), Text: stub("Text"), Button: stub("Button") }, model, actions);
+const noInput = drawn.join("\n");
+
 const checks: [string, boolean][] = [
-  ["skips the <system-reminder> wrapper as the first prompt", runs[0].firstPrompt === "Fix the token refresh bug"],
+  ["skips the <system-reminder> wrapper as the first prompt", first.firstPrompt === "Fix the token refresh bug"],
   ["newest ai-title wins over the earlier one", incremental.title === "Token refresh and retry"],
   ["tool_result and sidechain turns are not counted as prompts", incremental.prompts === 3],
   ["counts distinct edited files", incremental.filesTouched === 2],
   ["keeps the full cwd for resume", incremental.projectPath === "/tmp/demo" && incremental.project === "demo"],
   ["picks up the git branch", incremental.branch === "main"],
   ["activity strip spreads across the session's life", incremental.activity[0]! > 0 && incremental.activity[23]! > 0],
-  ["append-only re-index === full re-index", eq],
+  ["append-only re-index === full re-index", JSON.stringify(incremental) === JSON.stringify(fromScratch)],
+  ["a tag survives a resume's new session id", fingerprint({ ...incremental, id: "brand-new-id" }) === fingerprint(incremental)],
+  ["filter matches on #tag as well as text", matches(incremental, meta, "#auth") && !matches(incremental, meta, "#nope")],
+  ["the row draws its title, project, tag and strip", text.includes("Token refresh") && text.includes("demo") && text.includes("#auth") && text.includes(spark(incremental.activity))],
+  ["the row carries a digit hotkey", text.includes("Button:Token refresh")],
+  ["a surface without Input still draws the row", noInput.includes("Button:Token refresh")],
 ];
 for (const [name, ok] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${name}`);
-if (!eq) { console.log("incremental:", incremental); console.log("scratch:   ", fromScratch); }
-console.log(checks.every(c => c[1]) ? "\nall green" : "\nFAILURES");
+console.log(checks.every((c) => c[1]) ? "\nall green" : "\nFAILURES");
+if (!checks.every((c) => c[1])) process.exitCode = 1;

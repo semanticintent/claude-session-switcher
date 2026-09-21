@@ -16,10 +16,19 @@
     ],
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true
+    "exactOptionalPropertyTypes": true,
+    "typeRoots": [
+      "./node_modules/@types"
+    ],
+    "paths": {
+      "claude-code": [
+        "./types/claude-code.d.ts"
+      ]
+    }
   },
   "include": [
-    "src",
-    "test"
+    "hooks",
+    "test",
+    "types"
   ]
 }

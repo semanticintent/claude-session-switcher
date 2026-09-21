@@ -1,3 +1,6 @@
 node_modules/
 *.tsbuildinfo
 .DS_Store
+
+# Anthropic's declarations, fetched not vendored: `npm run types`
+types/claude-code.d.ts

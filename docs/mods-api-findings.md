@@ -63,8 +63,51 @@ survives contact with the real API unchanged; only the call it wraps changes fro
   table, with key handling moved to the `ui.*` hooks. `<Box>`/`<Text>` and
   `wrap="truncate-end"` look close enough that much of the tree survives.
 
-## Blocker
+## What `claude plugin validate` enforces that nothing else states
 
-Mods need Claude Code **>= 2.1.259** behind an early-access flag.
-This machine is on **2.1.34** — `claude update` first, then regenerate the
-declarations in-place with `/plugin-types` rather than trusting this file.
+Validated against Claude Code 2.1.278. Two refusals, neither of them in the
+declarations' prose, both of which reshaped this mod:
+
+**`$` never crosses an import.** Passing the engine interface into a helper in
+another module is refused outright:
+
+> `$` is passed to "engineHost", imported from "./host.ts": `$` is followed only
+> into a function declared in this same file, never across an import; `$` is
+> always spelled `$.noun.event(...)` at the call site
+
+So `hooks/host.ts` holds the port's *types* and one pure helper, and the
+engine-side implementation is spelled inline in `register.ts`. This is why the
+diff mod builds its own `Host` object at `session.start` rather than importing
+one — that shape is a requirement, not a preference.
+
+**A function that takes `$` must be declared at the top of the file.** Not nested
+in `register()`'s closure:
+
+> `$` is passed to "refresh", which is not a function declared at the top of this
+> file (a function declaration, or a const bound to one)
+
+Which is why the mod's state lives at module scope: `refresh` and `resume` have to
+be top-level, so the state they work on has to reach them.
+
+Both rules exist so the validator can compute a mod's footprint statically, which
+it then prints:
+
+```
+hooks:      session.start, command.run{command=DEFAULTS.commands},
+            ui.render{component=Pane}, ui.close{id=session-switcher}
+calls:      $.command.register, $.env.get, $.fs.list, $.fs.stat, $.process.run,
+            $.store.get, $.store.set, $.ui.close, $.ui.invalidate, $.ui.log,
+            $.ui.open, $.ui.resolve
+env writes: nothing
+env reads:  HOME
+```
+
+That is the whole reach of this mod, checkable before a session ever loads it.
+
+## Still missing on 2.1.278
+
+- `/plugin-types` is not installed in this build, so the vendored declarations stay
+  at the 2.1.277 copy from the repo. They validate clean against 2.1.278.
+- `claude plugin test` does not exist yet (`unknown command 'test'`), though the
+  declarations describe the kit it would run. The mod's own `npm test` covers the
+  same ground in the meantime.

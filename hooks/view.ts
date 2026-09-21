@@ -22,10 +22,18 @@ import type { Meta } from "./tags.ts";
 import { metaFor } from "./tags.ts";
 
 export const PAGE = 10;
-const BLOCKS = " ▁▂▃▄▅▆▇█";
+// Sixteen cells, not twenty-four: the strip sits left of every title, so its
+// width is a left margin on the whole list. Empty cells are a dot rather than
+// a space — a session with one busy minute should read as a shape with one
+// mark in it, not as a lone block floating in blank space.
+const CELLS = 16;
+const BLOCKS = "·▁▂▃▄▅▆▇█";
 // Project colours are hashed, so the same repo is always the same hue.
 const HUES = ["#7aa2f7", "#9ece6a", "#e0af68", "#bb9af7", "#7dcfff", "#f7768e", "#73daca", "#ff9e64"];
 const HOTKEYS = "1234567890";
+// Where a row's second line starts: under the title, past the strip and the
+// "N: " a plain Button draws.
+const INDENT = CELLS + 4;
 
 export type Model = {
   sessions: Session[];
@@ -160,32 +168,33 @@ function row(ui: Elements, s: Session, model: Model, actions: Actions, hotkey: s
           Text({ dimColor: true, children: " " + ago(s.lastActive) }),
         ],
       }),
+      // One meta line, not three. Ten rows have to fit the pane alongside the
+      // filter and the controls, and the opening prompt is still searchable
+      // whether or not it is drawn.
       Box({
-        marginLeft: 27,
+        marginLeft: INDENT,
         children: [
           Text({ color: colour, children: s.project }),
           ...(s.branch ? [Text({ dimColor: true, children: ` on ${s.branch}` })] : []),
+          Text({ dimColor: true, wrap: "truncate-end",
+                 children: ` · ${s.prompts} ${s.prompts === 1 ? "prompt" : "prompts"}`
+                   + (s.filesTouched ? `, ${s.filesTouched} files` : "")
+                   + (s.partial ? " · sampled" : "") }),
           ...(m?.tags ?? []).map((t) => Text({ color: "magenta", children: ` #${t}` })),
-        ],
-      }),
-      ...(s.firstPrompt && s.firstPrompt !== s.title
-        ? [Box({ marginLeft: 27, children: [Text({ dimColor: true, wrap: "truncate-end", children: `“${s.firstPrompt}”` })] })]
-        : []),
-      Box({
-        marginLeft: 27,
-        children: [
-          Text({ dimColor: true,
-                 children: `${s.prompts} prompts, ${s.filesTouched} files edited`
-                   + (s.partial ? " · large session, showing a sampled window" : "") }),
         ],
       }),
     ],
   });
 }
 
-export function spark(v: number[]): string {
-  const max = Math.max(...v, 1);
-  return v.map((x) => (x ? BLOCKS[Math.max(1, Math.round((x / max) * 8))] ?? "█" : " ")).join("");
+export function spark(v: number[], cells = CELLS): string {
+  // The index keeps 24 buckets; fold them down to however many the strip draws.
+  const per = v.length / cells;
+  const folded = Array.from({ length: cells }, (_, i) =>
+    v.slice(Math.floor(i * per), Math.max(Math.floor((i + 1) * per), Math.floor(i * per) + 1))
+     .reduce((a, b) => a + b, 0));
+  const max = Math.max(...folded, 1);
+  return folded.map((x) => (x ? BLOCKS[Math.max(1, Math.round((x / max) * 8))] ?? "█" : BLOCKS[0]!)).join("");
 }
 
 export const hue = (s: string): string =>

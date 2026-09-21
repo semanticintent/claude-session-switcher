@@ -166,7 +166,10 @@ export function register(on: On, options: PluginOptions) {
     state.mode = "resume";
     state.editing = null;
 
-    await $.ui.open({ id: PANE_ID, title: PANE_TITLE, focus: true, closeOnEscape: true, rows: 24 });
+    // Two lines a row, plus the header, the filter and the controls — asked
+    // for explicitly so the list doesn't overflow and scroll its own chrome
+    // out of view.
+    await $.ui.open({ id: PANE_ID, title: PANE_TITLE, focus: true, closeOnEscape: true, rows: PAGE * 2 + 4 });
     state.isOpen = true;
     void refresh($);
     return {};

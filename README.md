@@ -7,11 +7,23 @@ Claude Code already has `--resume` with a searchable picker. What this adds is
 **tags**, a sense of **shape** (when a session was actually busy), and switching
 **across projects from inside a running session**.
 
-Each row shows:
-- an **activity strip**: 24 cells tracing when the session was busy, tinted by project
+Two lines a row:
+
+```
+▇█▁▁···········▁ 1: Token refresh keeps 401ing on retry                    now
+                    api-gateway on feat/pane · 38 prompts, 12 files
+▄█▄█▄█▄█▄█▄█▄█▄█ 2: Port the switcher to the mods surface                   1h
+                    session-switcher on main · 112 prompts, 9 files
+█··█···█··█··█·· 3: Trace the 4 MiB stdout ceiling                          2h
+                    trailant on feat/pane · 640 prompts, 41 files · sampled
+···············█ 4: Bump the deploy workflow                               3h
+                    infra on main · 1 prompt
+```
+
+- an **activity strip**: 16 cells tracing when in its life the session was busy,
+  tinted by project — burst-then-idle, steady and bursty each read differently
 - the title (your custom title → the newest `ai-title` record → first real prompt)
-- relative last-active time, project, git branch, and your `#tags`
-- on the selected row: the opening prompt, prompt count, files edited
+- its digit hotkey, relative last-active time, project, branch, counts and `#tags`
 
 ## Keys
 

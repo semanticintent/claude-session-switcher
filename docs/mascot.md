@@ -178,6 +178,24 @@ wants would take both wing tips off, which are the shapes doing the most work. T
 background is black, so padding the sides instead is invisible and the bird survives
 whole.
 
+There are two cards, because the source is transparent and the choice matters:
+
+| file | background | for |
+|---|---|---|
+| `mascot-social.png` | opaque black | the GitHub social preview |
+| `mascot-social-alpha.png` | transparent | a post, a slide, anything light |
+
+The social preview is flattened on purpose. That card is composited by whatever
+renders it — Slack, LinkedIn, X and GitHub each treat transparency differently, some
+to white, some to their own card colour — and an opaque card looks the same
+everywhere. The transparent one is for the places you control the background; it sits
+as cleanly on white as on black, the navy outline reading as ink rather than a halo.
+
+A quirk of the source worth knowing if you composite it over anything busy: **no pixel
+in the render is fully opaque.** The bird sits at alpha 252–253 throughout, with the
+surround cleanly at zero — a generation artifact, about 1% translucency, invisible in
+practice but not a clean two-state mask.
+
 One known drift from the sprite, left as it is: the render floats the gorget in front
 of the chest as a separate block, where on the sprite it is attached to the throat
 under the bill.

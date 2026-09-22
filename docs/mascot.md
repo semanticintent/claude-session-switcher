@@ -1,6 +1,6 @@
 # Meet the Mascot 🐦
 
-<img src="assets/phae.svg" width="128" alt="Phae, a pixel-art hermit hummingbird">
+<img src="assets/phae.svg" width="200" alt="Phae, a pixel-art hermit hummingbird">
 
 ## Phae, the Trap-liner — Knows Which Flowers Have Refilled
 
@@ -109,27 +109,44 @@ version of thrift is not re-reading a file whose mtime hasn't moved.
 
 ## The Pixels
 
-Sixteen by sixteen, eight colours, in the same family as Claude Code's own terminal
-sprite: stout stacked squares, two black eyes, legible at the size a pane will draw
-it. The long bill, the gorget band, the forked tail and the wingbeat blur are the
-only four cues that separate a hummingbird from a blue blob, so those are the four
-the sprite spends its pixels on.
+Twenty-four by sixteen, eight colours, chunky in the same family as Claude Code's own
+terminal sprite — but in profile, which is the one place it departs.
+
+That departure was learned the hard way. The first attempt was front-facing with two
+eyes, closer to Clawd, and it read as a blue character in a flat cap: the wide crown
+and the level bill became a brim, the forked tail below an upright body became legs,
+and the wing blur became mittens. Clawd can be a blob because it is *ambiguous by
+design*. A hummingbird is a silhouette animal, and a silhouette animal needs its
+profile — long bill forward, body tilted, tail swept back, wings blurred through the
+stroke. One eye, and the bird is legible.
 
 The palette is not decorative. `#7aa2f7` is the first entry in the switcher's own
 project-hue table — the mascot is wearing the colour your first project is drawn in.
 
 ```
-.......DDDD.....      D  crown     #3b5bb5
-......DDDDDD....      B  body      #4c7fe0
-..YYYYDBKBBKD...      L  sheen     #7aa2f7   ← project hue 1
-......DBBBBBBD..      W  wingbeat  #a9c4fb
-.......GGGGG....      G  gorget    #f7768e   ← project hue 6
-WW.....GGGGG..WW      T  tail      #2f4487
-.WWW..BBBBBBB.WW      K  eye       #11131a
-..WW.BLLBBBBBB..      Y  bill      #2f3549
-.....BLLBBBBBB..
-.....BBBBBBBBB..      The grid is the source. Edit it, regenerate
-......BBBBBBB...      the SVG, and the run-merging keeps it to
-.......TTTTT....      about thirty rects.
-......TT...TT...
+........................
+.................WW.....
+................WWWW....
+.......DDDD....WWWW.....
+......DDDDDDD.WWWW......
+YYYYYYDDBKBBDWWWW.......
+.YYYYYDBBBBBBWWW........
+......GGBBBBBBBW........
+.....GGGBBBBBBBB........
+.....GGBBBBBBBBBBT......
+......BBBBBBBBBBTTTTT...
+.......BBBBBBBWTTTTTT...
+........BBBBWWWTTTT.....
+.........WWWWW..........
+..........WW............
+........................
 ```
+
+| | | |
+|---|---|---|
+| `Y` bill `#2f3549` | `D` crown `#3b5bb5` | `K` eye `#11131a` |
+| `B` body `#4c7fe0` | `G` gorget `#f7768e` ← project hue 6 | `T` tail `#2f4487` |
+| `W` wingbeat `#a9c4fb` | `L` sheen `#7aa2f7` ← project hue 1 | |
+
+The grid is the source. Edit it, regenerate the SVG, and merging runs keeps it to
+about forty rects.

@@ -1,5 +1,7 @@
 # Session Switcher — a Claude Mod
 
+<img src="docs/assets/phae.svg" width="96" align="right" alt="Phae, a pixel-art hermit hummingbird">
+
 `/sessions` (or Ctrl+G) opens a paged, filterable list of your recent Claude Code
 sessions, 10 per page, newest first.
 
@@ -284,6 +286,14 @@ releases.
 npm run check
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude
 ```
+
+## The mascot
+
+[Phae](docs/mascot.md), a hermit hummingbird. Hermits **trap-line** — a repeatable
+circuit of scattered flowers, each returned to on its own schedule — and they track
+not just which flowers they visited but how long ago, timing each return to that
+flower's refill rate. Many sites, held in parallel, none of them home. Same diagram
+as this tool, arrived at about forty million years earlier.
 
 ## License
 MIT

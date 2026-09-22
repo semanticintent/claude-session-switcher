@@ -1,6 +1,6 @@
 # Session Switcher — a Claude Mod
 
-<img src="docs/assets/phae-hovering.svg" width="150" align="right" alt="Phae, a pixel-art hermit hummingbird">
+<img src="docs/assets/mascot.svg" width="150" align="right" alt="Phae, a pixel-art hermit hummingbird">
 
 `/sessions` (or Ctrl+G) opens a paged, filterable list of your recent Claude Code
 sessions, 10 per page, newest first.

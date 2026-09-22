@@ -1,6 +1,6 @@
 # Meet the Mascot 🐦
 
-<img src="assets/phae.svg" width="200" alt="Phae, a pixel-art hermit hummingbird">
+<img src="assets/phae-hover.svg" width="200" alt="Phae, a pixel-art hermit hummingbird">
 
 ## Phae, the Trap-liner — Knows Which Flowers Have Refilled
 

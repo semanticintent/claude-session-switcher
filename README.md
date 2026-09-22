@@ -42,6 +42,48 @@ hotkey is exactly one digit.
 A surface whose element table has no `Input` still draws its rows; the filter
 degrades to a label rather than the pane refusing to draw.
 
+## Tagging
+
+Two ways in. From inside the session you're working in — no pane, no picking your
+own row out of a list:
+
+```
+/switcher #wip #mods          add two tags to this session
+/switcher -#mods              drop one
+/switcher Token refresh bug   retitle it
+/switcher #blocked waiting on review    both at once
+```
+
+That form **folds in** rather than replacing: tags add, `-#tag` removes, and the
+title is only overwritten when you type one. Tagging a session mid-flight should
+never silently drop the title you gave it this morning.
+
+Or from the pane: `t`, then the row's digit, then type. That form replaces, because
+you can see exactly what you're editing.
+
+Tags are stored per session and keyed by a project + opening-prompt fingerprint, so
+they survive the new session id that a resume mints.
+
+### What's worth tagging
+
+Not the project — that's already a facet. Typing `switcher` in the filter matches the
+project column for free, and the same goes for the branch and anything in the title.
+Tagging what the transcript already knows just duplicates it by hand.
+
+Tags earn their keep on what the transcript can't know:
+
+- **State** — `#wip`, `#blocked`, `#parked`. The switcher can see when a session was
+  last active, not whether you were finished. This is the one that turns a long list
+  into a queue.
+- **Threads that cross repos** — one line of thinking spanning three projects is
+  exactly what a project filter can't express.
+- **Context that isn't in the code** — `#work` vs personal, `#demo` for sessions
+  worth referencing later.
+
+One state tag plus at most one thread tag is usually enough. The filter ANDs its
+words, so `#wip #mods` narrows to the intersection. Tag vocabularies die from
+ambition, not from disuse.
+
 ## Layout
 
 An upstream-shaped plugin: `.claude-plugin/plugin.json`, `hooks/hooks.json` naming

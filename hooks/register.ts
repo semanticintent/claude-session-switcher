@@ -7,7 +7,7 @@
 import type { EngineInterface, On, PluginOptions } from "claude-code";
 import { wholeLines, PROJECTS, type FileInfo, type Host, type Store } from "./host.ts";
 import { cachedSessions, sync, type Session } from "./scan.ts";
-import { loadMeta, saveMeta, setMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
+import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
 import { loadConfig, registerFirst, DEFAULTS } from "./config.ts";
 import { view, PAGE, type Model, type Actions } from "./view.ts";
 
@@ -153,6 +153,20 @@ export function register(on: On, options: PluginOptions) {
   on("command.run", { command: DEFAULTS.commands }, async ($, e, next) => {
     const { host, store } = state;
     if (!host || !store || e.command !== state.commandName) return next(e);
+
+    // `/switcher #wip #mods` tags the session you're in and stays out of the
+    // way — no pane, no picking your own row out of a list.
+    const args = e.args.trim();
+    if (args) {
+      const id = await $.session.id();
+      const [sessions, meta] = await Promise.all([cachedSessions(store, host), loadMeta(store)]);
+      const self = sessions.find((x) => x.id === id) ?? null;
+      const saved = mergeMeta(id, self, meta, args);
+      await saveMeta(store, meta);
+      state.meta = meta;
+      const tags = saved.tags.length ? saved.tags.map((t) => "#" + t).join(" ") : "no tags";
+      return { text: saved.title ? `${tags} · “${saved.title}”` : tags };
+    }
 
     if (state.isOpen) {
       await $.ui.close({ id: PANE_ID }).catch(() => undefined);

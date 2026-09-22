@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cachedSessions, sync } from "../hooks/scan.ts";
 import { view, spark, matches, type Model } from "../hooks/view.ts";
-import { setMeta, fingerprint, type Meta } from "../hooks/tags.ts";
+import { setMeta, mergeMeta, metaFor, fingerprint, type Meta } from "../hooks/tags.ts";
 import { nodeHost, memoryStore } from "./node-host.ts";
 
 const T = join(process.env.TMPDIR ?? "/tmp", "session-switcher-fixture");
@@ -78,7 +78,22 @@ const noInput = drawn.join("\n");
 
 const bare = (await cachedSessions(store, host)).find((x) => x.projectPath === "/tmp/bare")!;
 
+// What `/switcher #wip` does from inside a session: fold in, don't replace.
+const live: Record<string, Meta> = {};
+setMeta(incremental, live, "#mods Token refresh");
+mergeMeta(incremental.id, incremental, live, "#wip");
+const merged = metaFor(incremental, live)!;
+mergeMeta(incremental.id, incremental, live, "-#mods #blocked");
+const after = metaFor(incremental, live)!;
+mergeMeta(incremental.id, incremental, live, "Renamed in flight");
+const retitled = metaFor(incremental, live)!;
+const brandNew = mergeMeta("not-indexed-yet", null, live, "#wip");
+
 const checks: [string, boolean][] = [
+  ["a tag adds without dropping the title", merged.tags.join() === "mods,wip" && merged.title === "Token refresh"],
+  ["-#tag removes just that one", after.tags.join() === "wip,blocked"],
+  ["a typed title replaces, tags survive", retitled.title === "Renamed in flight" && retitled.tags.join() === "wip,blocked"],
+  ["a session not yet indexed still takes a tag", brandNew.tags.join() === "wip" && brandNew.fp === undefined],
   ["a wrapper-only session gets a title, not \"Untitled\"", bare.title === "/plugin-types"],
   ["a detached or non-repo cwd draws no branch", bare.branch === undefined],
   ["skips the <system-reminder> wrapper as the first prompt", first.firstPrompt === "Fix the token refresh bug"],

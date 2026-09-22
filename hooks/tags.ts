@@ -46,6 +46,34 @@ export function setMeta(s: Session, all: Record<string, Meta>, input: string) {
   all[s.id] = { ...parsed, fp: fingerprint(s) };
 }
 
+/**
+ * Folds `input` into what a session already carries, rather than replacing it.
+ *
+ * This is what `/switcher #wip` does from inside a session, where replacing
+ * would be wrong: tagging a session you're in the middle of shouldn't silently
+ * drop the title you gave it this morning. Tags add, `-#tag` removes, and a
+ * title is only overwritten when you actually type one.
+ *
+ * `session` is null for a session too new to have reached the index yet — its
+ * tags are still keyed by id, just without a fingerprint to carry them across
+ * a resume until the next index pass.
+ */
+export function mergeMeta(
+  id: string,
+  session: Session | null,
+  all: Record<string, Meta>,
+  input: string,
+): Meta {
+  const existing = (session ? metaFor(session, all) : all[id]) ?? { tags: [] };
+  const removed = [...input.matchAll(/-#([\w-]+)/g)].map((m) => (m[1] ?? "").toLowerCase());
+  const parsed = parseEdit(input.replace(/-#[\w-]+/g, " "));
+  const tags = [...new Set([...existing.tags, ...parsed.tags])].filter((t) => !removed.includes(t));
+  const meta: Meta = { title: parsed.title ?? existing.title, tags };
+  if (session) meta.fp = fingerprint(session);
+  all[id] = meta;
+  return meta;
+}
+
 /** Drops records for sessions that no longer exist, so this can't grow forever. */
 export function pruneMeta(all: Record<string, Meta>, sessions: Session[]) {
   const live = new Set(sessions.map((s) => s.id));

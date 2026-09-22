@@ -130,6 +130,7 @@ export function view(ui: Elements, model: Model, actions: Actions): RenderElemen
           Button({ key: "next", hotkey: "n", plain: true, dimColor: true, label: "next",
                    onPress: () => actions.turnPage(1) }),
           Text({ dimColor: true, children: "Esc close" }),
+          Text({ dimColor: true, children: "· /switcher #tag tags this session" }),
         ],
       });
 

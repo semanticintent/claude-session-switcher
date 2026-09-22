@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "semanticintent",
+  "version": "1.0.0",
+  "description": "Claude Code mods and plugins from semanticintent",
+  "owner": {
+    "name": "Michael Shatny"
+  },
+  "plugins": [
+    {
+      "name": "session-switcher",
+      "description": "A paged, filterable, taggable switcher over your recent Claude Code sessions, with a per-row activity strip showing when each one was busy.",
+      "source": ".",
+      "category": "productivity"
+    }
+  ]
+}

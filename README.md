@@ -122,6 +122,50 @@ One state tag plus at most one thread tag is usually enough. The filter ANDs its
 words, so `#wip #mods` narrows to the intersection. Tag vocabularies die from
 ambition, not from disuse.
 
+## Install
+
+The repo is its own marketplace, so it installs in two lines:
+
+```
+claude plugin marketplace add semanticintent/claude-session-switcher
+claude plugin install session-switcher@semanticintent
+```
+
+Mods are early access, so the CLI needs the flag until they ship:
+
+```
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude
+```
+
+Then `/switcher`. To try it without installing anything, clone it and point the CLI
+at the directory for one session:
+
+```
+CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir ./claude-session-switcher
+```
+
+**Requirements:** Claude Code **2.1.259 or newer** (Mods do not exist before that).
+On a managed or enterprise install, plugins and marketplaces can be disabled by
+policy, and the CLI version may be pinned — both are worth checking before you
+start.
+
+**What it touches**, as `claude plugin validate .` reports it, which is the whole
+answer to "what does this thing do on my machine":
+
+```
+env reads:  HOME, OS, USERPROFILE
+env writes: nothing
+calls:      $.command.register, $.command.run, $.env.get, $.fs.list, $.fs.read,
+            $.fs.stat, $.process.run, $.session.id, $.store.get, $.store.set,
+            $.ui.close, $.ui.invalidate, $.ui.log, $.ui.open, $.ui.resolve
+```
+
+No `$.http`, so it makes no network calls of any kind. It reads your session
+transcripts and writes its index and your tags to the engine's own per-plugin store.
+Nothing leaves the machine, and nothing is written to the file system. The
+subprocesses it runs are `sed`, `head` and `tail` (or `Get-Content` on Windows),
+against transcript files only, and only for files too large for `$.fs.read`.
+
 ## Layout
 
 An upstream-shaped plugin: `.claude-plugin/plugin.json`, `hooks/hooks.json` naming

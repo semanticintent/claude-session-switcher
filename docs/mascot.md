@@ -160,3 +160,24 @@ ending rather than as fog.
 
 The grid is the source. Edit it, regenerate the SVG, and merging runs keeps it to
 about forty rects.
+
+## The render
+
+`assets/mascot-render.png` is a 3-D treatment of the same sprite, and
+`assets/mascot-social.png` is it sized for GitHub's social preview — the card that
+shows when the repo is linked on LinkedIn, X or Slack.
+
+It is kept here for provenance, not for use on this page. The argument above is that
+the sprite has to stay flat and legible small; a beveled render with bloom would
+contradict the paragraph it sat next to, and it is built for a black background that
+GitHub's light theme does not give it. **`mascot.svg` is the mascot.** The render is
+what the mascot looks like on a poster.
+
+The card is scaled rather than cropped: at 3:2, cropping to the 2:1 a social preview
+wants would take both wing tips off, which are the shapes doing the most work. The
+background is black, so padding the sides instead is invisible and the bird survives
+whole.
+
+One known drift from the sprite, left as it is: the render floats the gorget in front
+of the chest as a separate block, where on the sprite it is attached to the throat
+under the bill.

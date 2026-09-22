@@ -52,14 +52,21 @@ export async function loadConfig(store: Store): Promise<Config> {
  * this to cede `/diff` to the built-in "once the built-in stands down". So a
  * taken name costs us that candidate, not the mod.
  */
+export type Spec = {
+  name: string;
+  description: string;
+  argumentHint?: string;
+  immediate?: true;
+};
+
 export async function registerFirst(
-  register: (spec: { name: string; description: string }) => Promise<unknown>,
+  register: (spec: Spec) => Promise<unknown>,
   candidates: string[],
-  description: string,
+  spec: Omit<Spec, "name">,
 ): Promise<string | null> {
   for (const name of candidates) {
     try {
-      await register({ name, description });
+      await register({ ...spec, name });
       return name;
     } catch {
       /* taken, or refused — try the next one */

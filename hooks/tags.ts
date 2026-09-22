@@ -82,9 +82,15 @@ export function pruneMeta(all: Record<string, Meta>, sessions: Session[]) {
     if (!live.has(id) && !(m.fp && fps.has(m.fp))) delete all[id];
 }
 
-// "#auth #urgent Rename to this" → tags + optional title
+// "#auth #urgent Rename to this" → tags + optional title.
+//
+// `+#auth` is accepted as sugar for `#auth`: removal has to be marked, so `-#x`
+// exists, and once it does the symmetric `+#x` is the form people reach for.
+// Requiring it would be worse — `#wip` is what you type without thinking — so
+// both work and the sign is simply dropped here.
 export function parseEdit(input: string): Meta {
-  const tags = [...input.matchAll(/#([\w-]+)/g)].map((m) => (m[1] ?? "").toLowerCase()).filter(Boolean);
-  const title = input.replace(/#[\w-]+/g, "").trim() || undefined;
+  const text = input.replace(/[-+]#/g, "#");
+  const tags = [...text.matchAll(/#([\w-]+)/g)].map((m) => (m[1] ?? "").toLowerCase()).filter(Boolean);
+  const title = text.replace(/#[\w-]+/g, "").trim() || undefined;
   return { title, tags: [...new Set(tags)] };
 }

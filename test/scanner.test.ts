@@ -84,7 +84,7 @@ const live: Record<string, Meta> = {};
 setMeta(incremental, live, "#mods Token refresh");
 mergeMeta(incremental.id, incremental, live, "#wip");
 const merged = metaFor(incremental, live)!;
-mergeMeta(incremental.id, incremental, live, "-#mods #blocked");
+mergeMeta(incremental.id, incremental, live, "-#mods +#blocked");   // the symmetric form
 const after = metaFor(incremental, live)!;
 mergeMeta(incremental.id, incremental, live, "Renamed in flight");
 const retitled = metaFor(incremental, live)!;
@@ -101,7 +101,8 @@ const checks: [string, boolean][] = [
   ["posix head asks for lines, not bytes", sampleArgv(false, "x", 200, "head").join(" ") === "head -n 200 x"],
   ["a quote in a path can't break out of the PowerShell string", psPath("C:\\it's\\x") === "'C:\\it''s\\x'"],
   ["a tag adds without dropping the title", merged.tags.join() === "mods,wip" && merged.title === "Token refresh"],
-  ["-#tag removes just that one", after.tags.join() === "wip,blocked"],
+  ["-#tag removes just that one, +#tag adds", after.tags.join() === "wip,blocked"],
+  ["+#tag leaves no stray sign in the title", after.title === "Token refresh"],
   ["a typed title replaces, tags survive", retitled.title === "Renamed in flight" && retitled.tags.join() === "wip,blocked"],
   ["a session not yet indexed still takes a tag", brandNew.tags.join() === "wip" && brandNew.fp === undefined],
   ["a wrapper-only session gets a title, not \"Untitled\"", bare.title === "/plugin-types"],

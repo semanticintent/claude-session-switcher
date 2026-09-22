@@ -14,6 +14,23 @@ import { view, PAGE, type Model, type Actions } from "./view.ts";
 const PANE_ID = "session-switcher";
 const PANE_TITLE = "Sessions";
 const DESCRIPTION = "Switch between recent sessions — filter, tag, and resume in the right directory";
+// Drawn dim after the name as you type it, which is the only place the argument
+// form is discoverable at the moment you'd want it.
+const ARGUMENT_HINT = "[#tag | -#tag | new title | help]";
+
+const HELP = [
+  "/switcher                       open the switcher",
+  "/switcher #wip #mods            tag this session (+#wip works too)",
+  "/switcher -#mods                untag this session",
+  "/switcher Token refresh bug     retitle this session",
+  "/switcher #blocked on review    tag and retitle at once",
+  "",
+  "Arguments fold in: tags add, -#tag removes, and the title only changes when",
+  "you type one. In the pane, t then a row's digit edits it there instead, and",
+  "that form replaces what's on the row, because you can see it.",
+  "",
+  "In the pane: type to filter · 1-9,0 resume · t tag · n/p page · Esc close",
+].join("\n");
 
 /**
  * The mod's whole state. It lives at module scope rather than inside
@@ -161,7 +178,9 @@ export function register(on: On, options: PluginOptions) {
       state.commandName = await registerFirst(
         (spec) => $.command.register(spec),
         chosen ? [chosen, ...config.commands] : config.commands,
-        DESCRIPTION,
+        // immediate: tagging is worth doing the moment you think of it, not
+        // after the turn you're watching finishes.
+        { description: DESCRIPTION, argumentHint: ARGUMENT_HINT, immediate: true },
       );
       // Every candidate taken is survivable: the pane's own hotkeys still work
       // once it is open, and a later release may free one up.
@@ -177,6 +196,7 @@ export function register(on: On, options: PluginOptions) {
     // `/switcher #wip #mods` tags the session you're in and stays out of the
     // way — no pane, no picking your own row out of a list.
     const args = e.args.trim();
+    if (args === "help" || args === "?" || args === "--help") return { text: HELP };
     if (args) {
       const id = await $.session.id();
       const [sessions, meta] = await Promise.all([cachedSessions(store, host), loadMeta(store)]);

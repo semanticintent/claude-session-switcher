@@ -52,7 +52,17 @@ own row out of a list:
 /switcher -#mods              drop one
 /switcher Token refresh bug   retitle it
 /switcher #blocked waiting on review    both at once
+/switcher help                the above, in the terminal
 ```
+
+`+#wip` is accepted as sugar for `#wip`. Removal has to be marked, so `-#tag`
+exists; once it does, the symmetric `+#tag` is what people reach for. Requiring it
+would be worse — `#wip` is what you type without thinking — so both work.
+
+The form is drawn dim beside the command as you type it (`argumentHint`), which is
+the only place it's discoverable at the moment you'd want it. The command is
+registered `immediate`, so you can tag a session while a turn is still streaming —
+which is exactly when you notice the session is worth marking.
 
 That form **folds in** rather than replacing: tags add, `-#tag` removes, and the
 title is only overwritten when you type one. Tagging a session mid-flight should

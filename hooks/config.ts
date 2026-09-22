@@ -17,8 +17,6 @@ export const CONFIG_KEY = "session-switcher-config";
 export type Config = {
   /** Tried in order; the first that registers wins. */
   commands: string[];
-  /** Hotkey that opens the pane's rows; the pane itself needs no command name. */
-  keybinding: string;
   /** Files opened per refresh before the rest are left to the cache. */
   refresh: number;
 };
@@ -26,8 +24,6 @@ export type Config = {
 export const DEFAULTS: Config = {
   // Qualified first, short aliases after, generic last.
   commands: ["session-switcher:sessions", "switcher", "sessions"],
-  // Not ctrl+o — the CLI uses that to expand output.
-  keybinding: "ctrl+g",
   refresh: 40,
 };
 
@@ -36,7 +32,6 @@ export async function loadConfig(store: Store): Promise<Config> {
     const raw = ((await store.get(CONFIG_KEY)) ?? {}) as Partial<Config>;
     return {
       commands: Array.isArray(raw.commands) && raw.commands.length ? raw.commands : DEFAULTS.commands,
-      keybinding: typeof raw.keybinding === "string" ? raw.keybinding : DEFAULTS.keybinding,
       refresh: Number.isFinite(raw.refresh) ? Number(raw.refresh) : DEFAULTS.refresh,
     };
   } catch {
@@ -51,6 +46,9 @@ export async function loadConfig(store: Store): Promise<Config> {
  * documented way a mod finds out, and Anthropic's own `diff` mod does exactly
  * this to cede `/diff` to the built-in "once the built-in stands down". So a
  * taken name costs us that candidate, not the mod.
+ *
+ * There is no fallback beneath the last candidate: the surface gives a mod no
+ * way to bind a chord of its own, so a command name is the only way in.
  */
 export type Spec = {
   name: string;

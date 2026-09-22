@@ -2,8 +2,8 @@
 
 <img src="docs/assets/mascot.svg" width="150" align="right" alt="Phae, a pixel-art hermit hummingbird">
 
-`/sessions` (or Ctrl+G) opens a paged, filterable list of your recent Claude Code
-sessions, 10 per page, newest first.
+`/switcher` opens a paged, filterable list of your recent Claude Code sessions,
+10 per page, newest first.
 
 Claude Code already has `--resume` with a searchable picker. What this adds is
 **tags**, a sense of **shape** (when a session was actually busy), and switching
@@ -125,7 +125,8 @@ ambition, not from disuse.
 ## Layout
 
 An upstream-shaped plugin: `.claude-plugin/plugin.json`, `hooks/hooks.json` naming
-`hooks/register.ts`, and `types/claude-code.d.ts` vendored from Claude Code 2.1.277.
+`hooks/register.ts`, and `types/claude-code.d.ts` — Anthropic's declarations, fetched
+by `npm run types` rather than committed (see Development).
 `register(on)` hooks `session.start` (register the command), `command.run` (open the
 pane), `ui.render` (draw it) and `ui.close`.
 
@@ -147,7 +148,7 @@ Instead:
    not documented: the largest capture came back at 3.99 MiB. Reads are bounded so
    that cut is routine rather than exceptional, and a read that returns bytes but no
    whole line (one record larger than the entire limit) steps over that record
-   instead of stalling the file forever. Transcripts only grow, so a session that gained 40 lines
+   instead of stalling the file forever.
    Transcripts only grow, so a session that gained 40 lines is read from line
    `cached.lines + 1`, not line 1. A file that shrank is re-read whole.
    `test/scanner.test.ts` pins the invariant: incremental re-index === full re-index.
@@ -203,8 +204,9 @@ candidates and keeps the first the engine accepts:
     switcher                    → short alias
     sessions                    → generic; only if nothing owns it
 
-If a name is taken, that registration fails and the next is tried; if all three are
-taken, the keybinding still opens the switcher, so it degrades rather than breaks.
+If a name is taken, that registration fails and the next is tried. There is no
+fallback beneath the last candidate: the surface gives a mod no way to bind a chord
+of its own, so a command name is the only way in.
 The command name and the refresh count are declared as `userConfig` in the manifest,
 so they're editable from `/config` rather than a hidden file. A name chosen there is
 tried first and still falls back if a built-in owns it.
@@ -227,7 +229,7 @@ licence over them that isn't mine to give. `npm run types` fetches the copy from
 `anthropics/claude-code`. Once `/plugin-types` ships in the CLI, prefer that — it
 writes the declarations for the build you're actually on.
 
-## Before it will run
+## Verified on 2.1.278
 **It runs.** On Claude Code 2.1.278 with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, the
 engine loads the module, admits it, raises `session.start`, registers the command
 and opens the pane:
@@ -273,19 +275,31 @@ What the live run has *not* covered: the pane's actual drawing. A print-mode ses
 has no surface, so `ui.render` never fires there — the view is proven by its unit
 tests and by `ui.open` being placed, not by pixels.
 
-Known unknowns: resume shells out to `claude --resume <id>` with the session's cwd,
-because no `$.session.resume` appears on the surface. And the Windows read fallback
-has been written and pinned by tests but never executed — no Windows box here.
+**Resume is the one thing this mod cannot do for itself yet.** There is no
+`$.session.resume` on the surface, and the two near misses both fail:
+`$.process.run` captures a child's output and never hands it the terminal, so
+shelling out to `claude --resume` starts a *headless* second session and blocks
+until the timeout rather than switching you to anything. `$.command.run` is the
+right shape — it runs a slash command as if you typed it — but probing all 70
+commands in a session turned up no `/resume` among them. So the mod attempts it and
+treats the rejection as expected, printing the command instead:
+
+```
+cd /path/to/project && claude --resume <id>
+```
+
+Everything else the switcher promises works; this last step is a copy-paste until
+the surface offers a way to switch sessions. If you want it too, the
+[Mods issue](https://github.com/anthropics/claude-code/issues/91870) is the place
+to say so.
+
+The Windows read fallback has also been written and pinned by tests but never
+executed — no Windows box here.
 
 `/plugin-types` isn't installed in this build, so the declarations used here are the
 2.1.277 copy from upstream (`npm run types`). Regenerate with `/plugin-types` once it
 exists rather than trusting a snapshot — the header says the surface changes between
 releases.
-
-```
-npm run check
-CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude
-```
 
 ## The mascot
 

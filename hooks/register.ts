@@ -81,13 +81,27 @@ async function refresh($: EngineInterface): Promise<void> {
 }
 
 /**
- * A session belongs to a directory. Resuming one from another project without
- * its cwd drops you into the wrong repo, so the cwd goes with it.
+ * Resuming is the one thing this mod cannot do for itself.
+ *
+ * `$.process.run` captures a child's output and never hands it the terminal, so
+ * shelling out to `claude --resume` does not switch you to anything — it starts
+ * a headless second session and blocks until the timeout. `$.command.run` is the
+ * right shape (it runs a slash command as if you typed it) but a probe of all 70
+ * commands in a session found no `/resume` among them, so the call is attempted
+ * and its rejection is expected rather than exceptional.
+ *
+ * Until the surface offers a way to switch sessions, the honest fallback is to
+ * hand you the command — with the cwd, because a session belongs to a directory
+ * and resuming one from another project without it drops you in the wrong repo.
  */
 async function resume($: EngineInterface, s: Session): Promise<void> {
   await $.ui.close({ id: PANE_ID }).catch(() => undefined);
   state.isOpen = false;
-  await $.process.run(["claude", "--resume", s.id], { cwd: s.projectPath }).catch(() => undefined);
+  try {
+    await $.command.run({ command: "resume", args: s.id });
+  } catch {
+    $.ui.log(`cd ${s.projectPath} && claude --resume ${s.id}`);
+  }
 }
 
 export function register(on: On, options: PluginOptions) {

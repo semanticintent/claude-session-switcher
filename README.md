@@ -236,8 +236,8 @@ has no surface, so `ui.render` never fires there — the view is proven by its u
 tests and by `ui.open` being placed, not by pixels.
 
 Known unknowns: resume shells out to `claude --resume <id>` with the session's cwd,
-because no `$.session.resume` appears on the surface; and `sed`/`head`/`tail` mean
-the reader is POSIX-only until there's a portable ranged read.
+because no `$.session.resume` appears on the surface. And the Windows read fallback
+has been written and pinned by tests but never executed — no Windows box here.
 
 `/plugin-types` isn't installed in this build, so the declarations used here are the
 2.1.277 copy from upstream (`npm run types`). Regenerate with `/plugin-types` once it

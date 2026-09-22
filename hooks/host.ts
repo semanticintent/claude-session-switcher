@@ -4,10 +4,11 @@
 // scanner cannot import `node:fs`. Worse, `$.fs.read` rejects any file over
 // 4 MiB and offers no ranged read, and a 226 MB transcript is ordinary here.
 //
-// So reads go through `$.process.run`, which takes an argv (no shell) and
-// hands back the child's stdout. That gives back exactly what the design
-// needs — read the head, read the tail, or read only the lines appended since
-// last time — without ever copying a whole transcript into the plugin.
+// So a read tries `$.fs.read` first — no subprocess, every platform — and only
+// a transcript too big for that falls back to `$.process.run`, which takes an
+// argv (no shell) and hands back the child's stdout. That fallback is the one
+// platform-specific corner in the mod: `sed`/`head`/`tail` on a POSIX host,
+// `Get-Content` on Windows. Most sessions never reach it.
 //
 // This file holds only the port's shape and one pure helper. The engine-side
 // implementation lives in register.ts, because `claude plugin validate`
@@ -25,8 +26,10 @@ export type Host = {
    * "end of file" from "one line too big to come back whole".
    */
   linesFrom(path: string, from: number, max: number): Promise<{ lines: string[]; sawBytes: boolean }>;
-  /** Whole lines within the first / last `bytes` of the file. */
-  sample(path: string, bytes: number, end: "head" | "tail"): Promise<string[]>;
+  /** The first or last `lines` lines — a line budget, not a byte one, because
+   *  that is the one shape both `head`/`tail` and PowerShell's `Get-Content`
+   *  express directly. */
+  sample(path: string, lines: number, end: "head" | "tail"): Promise<string[]>;
 };
 
 export type Store = {
@@ -35,6 +38,32 @@ export type Store = {
 };
 
 export const PROJECTS = ".claude/projects";
+
+// The argv the fallback runs, built as pure functions so the Windows branch —
+// the one corner of this mod that cannot be executed on a POSIX machine — is
+// still reviewable and covered by tests.
+
+/** PowerShell quoting: single quotes, with any inside doubled. */
+export const psPath = (p: string) => `'${p.replace(/'/g, "''")}'`;
+
+const ps = (script: string) => ["powershell", "-NoProfile", "-NonInteractive", "-Command", script];
+
+/** Lines `from`..`from + max - 1`, printed without reading past them. */
+export function rangeArgv(isWindows: boolean, path: string, from: number, max: number): string[] {
+  const last = from + max - 1;
+  return isWindows
+    // -TotalCount stops the read at `last`; Skip drops the ones before `from`.
+    ? ps(`Get-Content -LiteralPath ${psPath(path)} -Encoding UTF8 -TotalCount ${last} | Select-Object -Skip ${from - 1}`)
+    // sed's trailing q is what stops it reading on to EOF after the range.
+    : ["sed", "-n", `${from},${last}p;${last + 1}q`, path];
+}
+
+/** The first or last `lines` lines. */
+export function sampleArgv(isWindows: boolean, path: string, lines: number, end: "head" | "tail"): string[] {
+  return isWindows
+    ? ps(`Get-Content -LiteralPath ${psPath(path)} -Encoding UTF8 ${end === "head" ? "-TotalCount" : "-Tail"} ${lines}`)
+    : [end === "head" ? "head" : "tail", "-n", String(lines), path];
+}
 
 /** Splits a captured stdout chunk into whole lines, dropping a truncated tail. */
 export function wholeLines(stdout: string, dropFirstPartial = false): string[] {

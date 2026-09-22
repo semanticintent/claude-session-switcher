@@ -4,6 +4,7 @@ import { cachedSessions, sync } from "../hooks/scan.ts";
 import { view, spark, matches, type Model } from "../hooks/view.ts";
 import { setMeta, mergeMeta, metaFor, fingerprint, type Meta } from "../hooks/tags.ts";
 import { nodeHost, memoryStore } from "./node-host.ts";
+import { rangeArgv, sampleArgv, psPath } from "../hooks/host.ts";
 
 const T = join(process.env.TMPDIR ?? "/tmp", "session-switcher-fixture");
 rmSync(T, { recursive: true, force: true });
@@ -89,7 +90,16 @@ mergeMeta(incremental.id, incremental, live, "Renamed in flight");
 const retitled = metaFor(incremental, live)!;
 const brandNew = mergeMeta("not-indexed-yet", null, live, "#wip");
 
+// The Windows fallback can't be run here, so it's pinned by its argv instead.
+const winRange = rangeArgv(true, "C:\\Users\\d\\.claude\\x.jsonl", 41, 10).join(" ");
+const posixRange = rangeArgv(false, "/h/x.jsonl", 41, 10);
+
 const checks: [string, boolean][] = [
+  ["posix range reads only the range and quits past it", posixRange[2] === "41,50p;51q"],
+  ["windows range stops the read at the last line it needs", winRange.includes("-TotalCount 50") && winRange.includes("-Skip 40")],
+  ["windows tail asks for lines from the end", sampleArgv(true, "x", 400, "tail").join(" ").includes("-Tail 400")],
+  ["posix head asks for lines, not bytes", sampleArgv(false, "x", 200, "head").join(" ") === "head -n 200 x"],
+  ["a quote in a path can't break out of the PowerShell string", psPath("C:\\it's\\x") === "'C:\\it''s\\x'"],
   ["a tag adds without dropping the title", merged.tags.join() === "mods,wip" && merged.title === "Token refresh"],
   ["-#tag removes just that one", after.tags.join() === "wip,blocked"],
   ["a typed title replaces, tags survive", retitled.title === "Renamed in flight" && retitled.tags.join() === "wip,blocked"],

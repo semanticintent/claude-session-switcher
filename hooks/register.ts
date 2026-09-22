@@ -5,7 +5,7 @@
 // surface is early access and may change between releases; regenerate the
 // declarations with /plugin-types rather than trusting this file's vintage.
 import type { EngineInterface, On, PluginOptions } from "claude-code";
-import { wholeLines, PROJECTS, type FileInfo, type Host, type Store } from "./host.ts";
+import { wholeLines, rangeArgv, sampleArgv, PROJECTS, type FileInfo, type Host, type Store } from "./host.ts";
 import { cachedSessions, sync, type Session } from "./scan.ts";
 import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
 import { loadConfig, registerFirst, DEFAULTS } from "./config.ts";
@@ -82,8 +82,11 @@ export function register(on: On, options: PluginOptions) {
 
 
   on("session.start", async ($, e, next) => {
-    // The plugin doesn't know where home is; the engine does.
-    const home = String((await $.env.get("HOME").catch(() => "")) ?? "");
+    // The plugin doesn't know where home is; the engine does. Windows sets
+    // USERPROFILE and often leaves HOME unset.
+    const home = String((await $.env.get("HOME").catch(() => undefined))
+      ?? (await $.env.get("USERPROFILE").catch(() => undefined)) ?? "");
+    const isWindows = (await $.env.get("OS").catch(() => undefined)) === "Windows_NT";
     if (home) {
       // Built here, not imported: `$` is only ever followed into a function
       // declared in the same file, so the engine-side Host is spelled inline.
@@ -91,6 +94,25 @@ export function register(on: On, options: PluginOptions) {
       const run = async (argv: string[]): Promise<string> => {
         const { exitCode, stdout } = await $.process.run(argv, { timeoutMs: 30_000 });
         return exitCode === 0 ? stdout : "";
+      };
+
+      // One-entry memo: a scan calls linesFrom repeatedly on the same file, and
+      // the $.fs.read path would otherwise re-read it whole each time.
+      let memoPath = "";
+      let memoLines: string[] | null = null;
+
+      /** The whole file as lines, or null when it is too big for $.fs.read. */
+      const wholeFile = async (path: string): Promise<string[] | null> => {
+        if (memoPath === path) return memoLines;
+        memoPath = path;
+        memoLines = null;
+        try {
+          const text = await $.fs.read(path);
+          memoLines = typeof text === "string" ? text.split("\n").filter(Boolean) : null;
+        } catch {
+          memoLines = null;   // over 4 MiB, or unreadable — the tools take it
+        }
+        return memoLines;
       };
 
       state.host = {
@@ -111,24 +133,22 @@ export function register(on: On, options: PluginOptions) {
         },
 
         async linesFrom(path, from, max) {
-          // sed streams the file and prints only the range, so the engine never
-          // sees more than the delta however large the transcript is. The
-          // trailing `q` matters: without it sed reads on to EOF after the
-          // range is printed, which on a 226 MB transcript is the whole cost
-          // again (0.04s vs 0.00s measured).
-          const last = from + max - 1;
-          const stdout = await run(["sed", "-n", `${from},${last}p;${last + 1}q`, path]);
+          const all = await wholeFile(path);
+          if (all) {
+            // The common case: no subprocess, nothing platform-specific.
+            return { lines: all.slice(from - 1, from - 1 + max), sawBytes: from - 1 < all.length };
+          }
+          const stdout = await run(rangeArgv(isWindows, path, from, max));
           // Measured: the engine cuts stdout at 4 MiB. wholeLines drops the
           // partial tail, and `sawBytes` lets the scanner recognise the one
           // case that cut hides — a single line bigger than the whole limit.
           return { lines: wholeLines(stdout + "\n"), sawBytes: stdout.length > 0 };
         },
 
-        async sample(path, bytes, end) {
-          const argv = end === "head"
-            ? ["head", "-c", String(bytes), path]
-            : ["tail", "-c", String(bytes), path];
-          return wholeLines(await run(argv) + "\n", end === "tail");
+        async sample(path, lines, end) {
+          const all = await wholeFile(path);
+          if (all) return end === "head" ? all.slice(0, lines) : all.slice(-lines);
+          return wholeLines(await run(sampleArgv(isWindows, path, lines, end)) + "\n");
         },
       };
 

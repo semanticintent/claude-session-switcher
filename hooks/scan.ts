@@ -18,8 +18,8 @@ export const INDEX_VERSION = 3;
 export const INDEX_KEY = "session-index";
 
 const BIN_MS = 5 * 60_000;              // activity histogram resolution
-const HEAD_BYTES = 256 * 1024;          // enough for the opening prompt + cwd + branch
-const TAIL_BYTES = 1024 * 1024;         // enough for the latest ai-title + last activity
+const HEAD_LINES = 200;                 // enough for the opening prompt + cwd + branch
+const TAIL_LINES = 400;                 // enough for the latest ai-title + last activity
 const FULL_SCAN_MAX = 8 * 1024 * 1024;  // above this, sample head+tail instead
 const LINES_PER_READ = 5_000;           // bounded: stdout is cut at 4 MiB (measured)
 const READS_PER_FILE = 8;               // …so a huge delta catches up over a few opens
@@ -120,8 +120,8 @@ async function scan(host: Host, f: FileInfo, cached?: Entry): Promise<Entry> {
   if (!resumable && f.size > FULL_SCAN_MAX) {
     // Too big to read whole on first sight: take the opening prompt from the
     // head and recent activity from the tail, and say so in the row.
-    for (const line of await host.sample(f.path, HEAD_BYTES, "head")) fold(line, e);
-    for (const line of await host.sample(f.path, TAIL_BYTES, "tail")) fold(line, e);
+    for (const line of await host.sample(f.path, HEAD_LINES, "head")) fold(line, e);
+    for (const line of await host.sample(f.path, TAIL_LINES, "tail")) fold(line, e);
     e.partial = true;
     return e;
   }

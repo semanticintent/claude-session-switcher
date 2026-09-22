@@ -25,14 +25,9 @@ export function nodeHost(root: string): Host {
       const lines = all.slice(from - 1, from - 1 + max);
       return { lines, sawBytes: from - 1 < all.length };
     },
-    async sample(path, bytes, end) {
-      const buf = readFileSync(path);
-      const slice = end === "head" ? buf.subarray(0, bytes) : buf.subarray(Math.max(0, buf.length - bytes));
-      const text = slice.toString("utf8");
-      const lines = text.split("\n");
-      // Same truncation rules the real host applies to a captured stdout.
-      if (buf.length > bytes) { if (end === "head") lines.pop(); else lines.shift(); }
-      return lines.filter(Boolean);
+    async sample(path, lines, end) {
+      const all = linesOf(path);
+      return end === "head" ? all.slice(0, lines) : all.slice(-lines);
     },
   };
 }

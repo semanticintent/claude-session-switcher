@@ -26,6 +26,13 @@ export type Host = {
    * "end of file" from "one line too big to come back whole".
    */
   linesFrom(path: string, from: number, max: number): Promise<{ lines: string[]; sawBytes: boolean }>;
+  /**
+   * Session ids to the names you gave them, from Claude Code's own store.
+   * `nameSource: "derived"` marks the CLI's auto-slug, not your choice, and is
+   * left out — letting a weak slug outrank a real title inverts the order.
+   */
+  names(): Promise<Record<string, string>>;
+
   /** The first or last `lines` lines — a line budget, not a byte one, because
    *  that is the one shape both `head`/`tail` and PowerShell's `Get-Content`
    *  express directly. */
@@ -38,6 +45,7 @@ export type Store = {
 };
 
 export const PROJECTS = ".claude/projects";
+export const SESSIONS = ".claude/sessions";
 
 // The argv the fallback runs, built as pure functions so the Windows branch —
 // the one corner of this mod that cannot be executed on a POSIX machine — is

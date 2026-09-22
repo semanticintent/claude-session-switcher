@@ -69,9 +69,9 @@ export async function loadIndex(store: Store): Promise<Record<string, Entry>> {
 
 /** Instant: the cached index only, no transcript is opened. */
 export async function cachedSessions(store: Store, host: Host, limit = 200): Promise<Session[]> {
-  const [files, index] = await Promise.all([host.list(), loadIndex(store)]);
+  const [files, index, names] = await Promise.all([host.list(), loadIndex(store), host.names().catch(() => ({}))]);
   return files.slice(0, limit)
-    .map((f) => toSession(index[f.path], f))
+    .map((f) => toSession(index[f.path], f, names))
     .filter((s): s is Session => s !== null);
 }
 
@@ -85,7 +85,7 @@ export async function sync(
   onRow: (s: Session) => void,
   { refresh = 40 }: { refresh?: number } = {},
 ): Promise<void> {
-  const [files, index] = await Promise.all([host.list(), loadIndex(store)]);
+  const [files, index, names] = await Promise.all([host.list(), loadIndex(store), host.names().catch(() => ({}))]);
   let touched = 0;
   let opened = 0;
 
@@ -98,7 +98,7 @@ export async function sync(
     if (!entry) continue;
     index[f.path] = entry;
     touched++;
-    const row = toSession(entry, f);
+    const row = toSession(entry, f, names);
     if (row) onRow(row);
   }
 
@@ -244,14 +244,16 @@ function isSystemWrapper(text: string): boolean {
 
 // ---------------------------------------------------------------- rows
 
-export function toSession(e: Entry | undefined, f: FileInfo): Session | null {
+export function toSession(e: Entry | undefined, f: FileInfo, names: Record<string, string> = {}): Session | null {
   if (!e || (e.prompts === 0 && !e.aiTitle)) return null;
   // cwd from the transcript is authoritative; the directory name is a lossy
   // fallback (Claude Code maps "/", ".", ":" and "\" all onto "-").
   const projectPath = e.cwd || decodeProjectDir(dirName(f.path));
   return {
     id: e.id,
-    title: clean(e.aiTitle || e.summary || e.firstPrompt || e.wrapperPrompt || "Untitled session"),
+    // A name you gave the session outranks everything: it is the only one of
+    // these that is a decision rather than a guess.
+    title: clean(names[e.id] || e.aiTitle || e.summary || e.firstPrompt || e.wrapperPrompt || "Untitled session"),
     firstPrompt: e.firstPrompt ? clean(e.firstPrompt) : "",
     project: baseName(projectPath) || "?",
     projectPath,

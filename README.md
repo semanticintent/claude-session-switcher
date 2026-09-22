@@ -22,7 +22,9 @@ Two lines a row:
 
 - an **activity strip**: 16 cells tracing when in its life the session was busy,
   tinted by project — burst-then-idle, steady and bursty each read differently
-- the title (your custom title → the newest `ai-title` record → first real prompt)
+- the title, in order of how deliberate it is: a title you set here → the name you
+  gave the session (`claude -n`, or the picker's rename) → the newest `ai-title`
+  record → your first real prompt
 - its digit hotkey, relative last-active time, project, branch, counts and `#tags`
 
 ## Keys
@@ -73,6 +75,30 @@ you can see exactly what you're editing.
 
 Tags are stored per session and keyed by a project + opening-prompt fingerprint, so
 they survive the new session id that a resume mints.
+
+### If you already name sessions
+
+A name like `Sep 10 | someone | some team` is three facets crammed into one string,
+because a title was the only field there was. The switcher reads those names — they
+outrank the generated `ai-title` — so nothing you've already done is lost. But split
+that way it does more:
+
+```
+/switcher #someone #some-team Refund reconciliation mismatch
+```
+
+- **The date is already there.** Every row shows its own last-active time, and falls
+  back to a calendar date past a month. Spending the title on `Sep 10` costs you the
+  widest column in the list.
+- **The facets compose.** The filter ANDs its words, so `#someone #some-team` is the
+  intersection. A pipe-string can only be substring-matched, and `Some Team` versus
+  `Some Tm` splits into two things that never meet again.
+- **The title is then free to say what the session was about** — the one thing none
+  of the three facets tell you, and the thing you actually need when you come back.
+
+A tag is lowercased and takes letters, digits, `_` and `-` only, so `Some Team`
+becomes `#some-team`. `#some team` would read as the tag `some` and a title
+`team`.
 
 ### What's worth tagging
 

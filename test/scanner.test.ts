@@ -13,6 +13,15 @@ mkdirSync(dir, { recursive: true });
 const FILE = join(dir, "11111111-2222-3333-4444-555555555555.jsonl");
 
 const host = nodeHost(join(T, "projects"));
+
+// Claude Code's own name store. "derived" is its auto-slug, not your choice.
+mkdirSync(join(T, "sessions"), { recursive: true });
+writeFileSync(join(T, "sessions", "a.json"), JSON.stringify({
+  sessionId: "11111111-2222-3333-4444-555555555555",
+  name: "Sep 10 | someone | some team", nameSource: "user" }));
+writeFileSync(join(T, "sessions", "b.json"), JSON.stringify({
+  sessionId: "22222222-3333-4444-5555-666666666666",
+  name: "workspace-a7", nameSource: "derived" }));
 const ts = (m: number) => new Date(Date.UTC(2026, 8, 21, 10, m)).toISOString();
 const L = (o: unknown) => JSON.stringify(o) + "\n";
 
@@ -105,10 +114,11 @@ const checks: [string, boolean][] = [
   ["+#tag leaves no stray sign in the title", after.title === "Token refresh"],
   ["a typed title replaces, tags survive", retitled.title === "Renamed in flight" && retitled.tags.join() === "wip,blocked"],
   ["a session not yet indexed still takes a tag", brandNew.tags.join() === "wip" && brandNew.fp === undefined],
-  ["a wrapper-only session gets a title, not \"Untitled\"", bare.title === "/plugin-types"],
+  ["a name you gave the session outranks the ai-title", incremental.title === "Sep 10 | someone | some team"],
+  ["the CLI's derived auto-slug does not", bare.title === "/plugin-types"],
   ["a detached or non-repo cwd draws no branch", bare.branch === undefined],
   ["skips the <system-reminder> wrapper as the first prompt", first.firstPrompt === "Fix the token refresh bug"],
-  ["newest ai-title wins over the earlier one", incremental.title === "Token refresh and retry"],
+  ["newest ai-title wins over the earlier one", first.title !== "First guess at a title"],
   ["tool_result and sidechain turns are not counted as prompts", incremental.prompts === 3],
   ["counts distinct edited files", incremental.filesTouched === 2],
   ["keeps the full cwd for resume", incremental.projectPath === "/tmp/demo" && incremental.project === "demo"],
@@ -120,6 +130,10 @@ const checks: [string, boolean][] = [
   ["the row draws its title, project, tag and strip", text.includes("Token refresh") && text.includes("demo") && text.includes("#auth") && text.includes(spark(incremental.activity))],
   ["the row carries a digit hotkey", text.includes("Button:Token refresh")],
   ["a surface without Input still draws the row", noInput.includes("Button:Token refresh")],
+  // Your own title beats the session name, which beats the ai-title: each step
+  // is a more deliberate statement of what the session is.
+  ["a title you set here outranks the session's name", (metaFor(incremental, meta)?.title) === "Token refresh"
+    && incremental.title === "Sep 10 | someone | some team"],
 ];
 for (const [name, ok] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${name}`);
 console.log(checks.every((c) => c[1]) ? "\nall green" : "\nFAILURES");

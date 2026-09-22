@@ -5,7 +5,7 @@
 // surface is early access and may change between releases; regenerate the
 // declarations with /plugin-types rather than trusting this file's vintage.
 import type { EngineInterface, On, PluginOptions } from "claude-code";
-import { wholeLines, rangeArgv, sampleArgv, PROJECTS, type FileInfo, type Host, type Store } from "./host.ts";
+import { wholeLines, rangeArgv, sampleArgv, PROJECTS, SESSIONS, type FileInfo, type Host, type Store } from "./host.ts";
 import { cachedSessions, sync, type Session } from "./scan.ts";
 import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
 import { loadConfig, registerFirst, DEFAULTS } from "./config.ts";
@@ -108,6 +108,7 @@ export function register(on: On, options: PluginOptions) {
       // Built here, not imported: `$` is only ever followed into a function
       // declared in the same file, so the engine-side Host is spelled inline.
       const root = `${home}/${PROJECTS}`;
+      const namesDir = `${home}/${SESSIONS}`;
       const run = async (argv: string[]): Promise<string> => {
         const { exitCode, stdout } = await $.process.run(argv, { timeoutMs: 30_000 });
         return exitCode === 0 ? stdout : "";
@@ -147,6 +148,24 @@ export function register(on: On, options: PluginOptions) {
             }
           }
           return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        },
+
+        async names() {
+          const out: Record<string, string> = {};
+          const files = await $.fs.list(namesDir).catch(() => []);
+          // Vendor-internal and undocumented: any failure here must degrade to
+          // "no names found", never break the listing.
+          for (const f of files) {
+            if (f.kind !== "file" || !f.name.endsWith(".json")) continue;
+            try {
+              const raw = await $.fs.read(`${namesDir}/${f.name}`);
+              const d = JSON.parse(typeof raw === "string" ? raw : "{}") as Record<string, unknown>;
+              const id = d["sessionId"], name = d["name"];
+              if (typeof id === "string" && typeof name === "string" && name
+                  && d["nameSource"] !== "derived") out[id] = name;
+            } catch { /* not ours to understand */ }
+          }
+          return out;
         },
 
         async linesFrom(path, from, max) {

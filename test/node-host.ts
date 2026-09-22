@@ -20,6 +20,20 @@ export function nodeHost(root: string): Host {
       }
       return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
     },
+    async names() {
+      try {
+        const dir = `${root}/../sessions`;
+        const out: Record<string, string> = {};
+        for (const f of readdirSync(dir)) {
+          if (!f.endsWith(".json")) continue;
+          const d = JSON.parse(readFileSync(`${dir}/${f}`, "utf8")) as Record<string, unknown>;
+          if (typeof d["sessionId"] === "string" && typeof d["name"] === "string"
+              && d["name"] && d["nameSource"] !== "derived") out[d["sessionId"]] = d["name"];
+        }
+        return out;
+      } catch { return {}; }
+    },
+
     async linesFrom(path, from, max) {
       const all = linesOf(path);
       const lines = all.slice(from - 1, from - 1 + max);

@@ -93,7 +93,8 @@ export function view(ui: Elements, model: Model, actions: Actions): RenderElemen
 
   const filter = Input ? Input({
     key: "filter",
-    label: "› ",
+    // No label: the surface draws its own separator after one, so "› " came
+    // out as "› :".
     placeholder: "filter by title, project, branch or #tag",
     value: model.query,
     submitLabel: "filter",
@@ -109,8 +110,8 @@ export function view(ui: Elements, model: Model, actions: Actions): RenderElemen
   const editor = model.editing && Input
     ? Input({
         key: "tags",
-        label: "Rename or tag › ",
-        placeholder: "#auth #client-x Token refresh bug",
+        label: "Tag or rename",
+        placeholder: "#wip #mods  or a new title  or both",
         value: model.editing.text,
         submitLabel: "save",
         autoFocus: true,

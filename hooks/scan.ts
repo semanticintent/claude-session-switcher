@@ -14,7 +14,7 @@
 // Nothing here touches the file system directly: see hooks/host.ts.
 import type { Host, Store, FileInfo } from "./host.ts";
 
-export const INDEX_VERSION = 2;
+export const INDEX_VERSION = 3;
 export const INDEX_KEY = "session-index";
 
 const BIN_MS = 5 * 60_000;              // activity histogram resolution
@@ -35,6 +35,7 @@ export type Entry = {
   aiTitle?: string | undefined;   // newest wins — titles regenerate mid-session
   summary?: string | undefined;   // legacy fallback; real transcripts have none
   firstPrompt?: string | undefined;
+  wrapperPrompt?: string | undefined;  // first user turn even when it was a wrapper
   cwd?: string | undefined;
   branch?: string | undefined;
   prompts: number;     // human turns, not every timestamped line
@@ -157,7 +158,12 @@ export function fold(line: string, e: Entry) {
   const t = ts ? Date.parse(ts) : NaN;
 
   if (e.cwd === undefined) { const m = RE_CWD.exec(line)?.[1]; if (m) e.cwd = unescape(m); }
-  if (e.branch === undefined) { const m = RE_BRANCH.exec(line)?.[1]; if (m) e.branch = unescape(m); }
+  if (e.branch === undefined) {
+    const m = RE_BRANCH.exec(line)?.[1];
+    // "HEAD" is what a detached checkout — or a directory that is no repo at
+    // all — reports. Drawing "on HEAD" tells you nothing.
+    if (m && m !== "HEAD") e.branch = unescape(m);
+  }
 
   if (line.includes('"type":"ai-title"')) {
     // Titles regenerate as a session goes on; the newest is the honest one.
@@ -192,6 +198,13 @@ export function fold(line: string, e: Entry) {
     if (e.firstPrompt === undefined) {
       const text = firstText(line);
       if (text && !isSystemWrapper(text)) e.firstPrompt = clean(text).slice(0, 300);
+      // A session whose every turn is a wrapper still deserves better than
+      // "Untitled": `clean` strips the tags, and what's inside one is usually
+      // the command that ran.
+      else if (text && e.wrapperPrompt === undefined) {
+        const inner = clean(text).slice(0, 80);
+        if (inner) e.wrapperPrompt = inner;
+      }
     }
     return;
   }
@@ -238,7 +251,7 @@ export function toSession(e: Entry | undefined, f: FileInfo): Session | null {
   const projectPath = e.cwd || decodeProjectDir(dirName(f.path));
   return {
     id: e.id,
-    title: clean(e.aiTitle || e.summary || e.firstPrompt || "Untitled session"),
+    title: clean(e.aiTitle || e.summary || e.firstPrompt || e.wrapperPrompt || "Untitled session"),
     firstPrompt: e.firstPrompt ? clean(e.firstPrompt) : "",
     project: baseName(projectPath) || "?",
     projectPath,

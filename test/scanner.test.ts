@@ -27,6 +27,14 @@ const part1 =
   L({ type: "last-prompt", timestamp: ts(4), text: "noise" });
 writeFileSync(FILE, part1);
 
+// A second session whose every turn is a wrapper, in a directory that is no
+// git repo — the two cases that used to draw "Untitled session ... on HEAD".
+const BARE = join(dir, "22222222-3333-4444-5555-666666666666.jsonl");
+writeFileSync(BARE,
+  L({ type: "user", timestamp: ts(10), cwd: "/tmp/bare", gitBranch: "HEAD",
+      message: { content: "<command-name>/plugin-types</command-name>" } }) +
+  L({ type: "user", timestamp: ts(11), message: { content: "<system-reminder>be good</system-reminder>" } }));
+
 let store = memoryStore();
 await sync(store, host, () => {});
 const first = (await cachedSessions(store, host))[0]!;
@@ -63,7 +71,11 @@ drawn.length = 0;
 view({ Box: stub("Box"), Text: stub("Text"), Button: stub("Button") }, model, actions);
 const noInput = drawn.join("\n");
 
+const bare = (await cachedSessions(store, host)).find((x) => x.projectPath === "/tmp/bare")!;
+
 const checks: [string, boolean][] = [
+  ["a wrapper-only session gets a title, not \"Untitled\"", bare.title === "/plugin-types"],
+  ["a detached or non-repo cwd draws no branch", bare.branch === undefined],
   ["skips the <system-reminder> wrapper as the first prompt", first.firstPrompt === "Fix the token refresh bug"],
   ["newest ai-title wins over the earlier one", incremental.title === "Token refresh and retry"],
   ["tool_result and sidechain turns are not counted as prompts", incremental.prompts === 3],

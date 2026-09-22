@@ -35,9 +35,14 @@ writeFileSync(BARE,
       message: { content: "<command-name>/plugin-types</command-name>" } }) +
   L({ type: "user", timestamp: ts(11), message: { content: "<system-reminder>be good</system-reminder>" } }));
 
+// Selected by project, not by position: the fixture holds more than one
+// session and they are ordered by mtime.
+const demoOf = async (st: typeof store) =>
+  (await cachedSessions(st, host)).find((x) => x.projectPath === "/tmp/demo")!;
+
 let store = memoryStore();
 await sync(store, host, () => {});
-const first = (await cachedSessions(store, host))[0]!;
+const first = await demoOf(store);
 
 // …session continues: more turns, a regenerated title, another file edited.
 appendFileSync(FILE,
@@ -45,12 +50,12 @@ appendFileSync(FILE,
   L({ type: "assistant", timestamp: ts(41), message: { content: [{ type: "tool_use", name: "Write", input: { file_path: "/tmp/demo/b.ts" } }] } }) +
   L({ type: "ai-title", timestamp: ts(42), aiTitle: "Token refresh and retry" }));
 await sync(store, host, () => {});
-const incremental = (await cachedSessions(store, host))[0]!;
+const incremental = await demoOf(store);
 
 // Same file, but indexed from scratch — the two must agree.
 store = memoryStore();
 await sync(store, host, () => {});
-const fromScratch = (await cachedSessions(store, host))[0]!;
+const fromScratch = await demoOf(store);
 
 // The view is a pure function, so it can be drawn with recording stubs.
 const drawn: string[] = [];

@@ -38,7 +38,7 @@ hotkey is exactly one digit.
 | Key | Action |
 |---|---|
 | type | filter across title, prompt, project, branch, `#tag` |
-| 1–9, 0 | resume that row, in its own directory |
+| 1–9, 0 | print the resume command for that row, with its directory — the mods surface can't switch sessions yet ([why](#verified-on-21278)) |
 | t | tag mode — a digit then opens that row's tag field |
 | n / p | next / previous page |
 | Esc | close the pane |
@@ -315,9 +315,10 @@ claude plugin validate .
 CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir .
 ```
 
-What the live run has *not* covered: the pane's actual drawing. A print-mode session
-has no surface, so `ui.render` never fires there — the view is proven by its unit
-tests and by `ui.open` being placed, not by pixels.
+The pane itself has been drawn in an interactive session on the same version: rows,
+digit hotkeys, per-project colour, paging and live filtering all work as described.
+(A print-mode session has no surface, so `ui.render` never fires there — that part
+needed a real terminal to confirm.)
 
 **Resume is the one thing this mod cannot do for itself yet.** There is no
 `$.session.resume` on the surface, and the two near misses both fail:

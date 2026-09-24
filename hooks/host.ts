@@ -73,6 +73,17 @@ export function sampleArgv(isWindows: boolean, path: string, lines: number, end:
     : [end === "head" ? "head" : "tail", "-n", String(lines), path];
 }
 
+/**
+ * What to paste to resume a session in its own directory. Windows PowerShell
+ * 5.1 has no `&&` — it is a parse error there — so the Windows form spells the
+ * same "only if the cd worked" with `$?`.
+ */
+export function resumeCommand(isWindows: boolean, dir: string, id: string): string {
+  return isWindows
+    ? `cd ${psPath(dir)}; if ($?) { claude --resume ${id} }`
+    : `cd ${dir} && claude --resume ${id}`;
+}
+
 /** Splits a captured stdout chunk into whole lines, dropping a truncated tail. */
 export function wholeLines(stdout: string, dropFirstPartial = false): string[] {
   const lines = stdout.split("\n");

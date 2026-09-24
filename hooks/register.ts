@@ -5,7 +5,7 @@
 // surface is early access and may change between releases; regenerate the
 // declarations with /plugin-types rather than trusting this file's vintage.
 import type { EngineInterface, On, PluginOptions } from "claude-code";
-import { wholeLines, rangeArgv, sampleArgv, PROJECTS, SESSIONS, type FileInfo, type Host, type Store } from "./host.ts";
+import { wholeLines, rangeArgv, sampleArgv, resumeCommand, PROJECTS, SESSIONS, type FileInfo, type Host, type Store } from "./host.ts";
 import { cachedSessions, sync, type Session } from "./scan.ts";
 import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
 import { loadConfig, registerFirst, DEFAULTS } from "./config.ts";
@@ -42,6 +42,7 @@ const state = {
   host: null as Host | null,
   store: null as Store | null,
   commandName: null as string | null,
+  isWindows: false,
   isOpen: false,
   syncing: false,
   sessions: [] as Session[],
@@ -100,7 +101,7 @@ async function resume($: EngineInterface, s: Session): Promise<void> {
   try {
     await $.command.run({ command: "resume", args: s.id });
   } catch {
-    $.ui.log(`cd ${s.projectPath} && claude --resume ${s.id}`);
+    $.ui.log(resumeCommand(state.isWindows, s.projectPath, s.id));
   }
 }
 
@@ -118,6 +119,7 @@ export function register(on: On, options: PluginOptions) {
     const home = String((await $.env.get("HOME").catch(() => undefined))
       ?? (await $.env.get("USERPROFILE").catch(() => undefined)) ?? "");
     const isWindows = (await $.env.get("OS").catch(() => undefined)) === "Windows_NT";
+    state.isWindows = isWindows;
     if (home) {
       // Built here, not imported: `$` is only ever followed into a function
       // declared in the same file, so the engine-side Host is spelled inline.

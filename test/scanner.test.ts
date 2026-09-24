@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cachedSessions, sync } from "../hooks/scan.ts";
 import { view, spark, matches, type Model } from "../hooks/view.ts";
-import { setMeta, mergeMeta, metaFor, fingerprint, type Meta } from "../hooks/tags.ts";
+import { setMeta, mergeMeta, metaFor, fingerprint, statusText, type Meta } from "../hooks/tags.ts";
 import { nodeHost, memoryStore } from "./node-host.ts";
 import { rangeArgv, sampleArgv, psPath, resumeCommand, sameDir } from "../hooks/host.ts";
 
@@ -130,6 +130,14 @@ const checks: [string, boolean][] = [
   ["keeps the full cwd for resume", incremental.projectPath === "/tmp/demo" && incremental.project === "demo"],
   ["a Windows cwd draws its last folder, not the whole path", win.projectPath === WIN_CWD && win.project === "Widget.2.1"],
   ["posix resume keeps &&", resumeCommand(false, "/tmp/demo", "abc") === "cd /tmp/demo && claude --resume abc"],
+  // The line pinned under the prompt. The session name is already in the
+  // prompt border, so a switcher title that repeats it is left out.
+  ["status line shows tags", statusText({ tags: ["wip", "mods"] }) === "#wip #mods"],
+  ["status line adds a switcher title the border doesn't show",
+    statusText({ title: "Token refresh", tags: ["wip"] }, "Sep 10 | someone") === "#wip · “Token refresh”"],
+  ["status line drops a title that repeats the session name",
+    statusText({ title: "my tasks/sessions ", tags: ["wip"] }, "My Tasks/Sessions") === "#wip"],
+  ["nothing to show clears the line", statusText({ tags: [] }) === undefined && statusText(undefined) === undefined],
   // /resume only finds the current project's sessions, so this decides between
   // switching in place and handing over the command.
   ["windows dirs match regardless of case, separator or trailing slash",

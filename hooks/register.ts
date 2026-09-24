@@ -7,7 +7,7 @@
 import type { EngineInterface, On, PluginOptions } from "claude-code";
 import { wholeLines, rangeArgv, sampleArgv, resumeCommand, sameDir, PROJECTS, SESSIONS, type FileInfo, type Host, type Store } from "./host.ts";
 import { cachedSessions, sync, type Session } from "./scan.ts";
-import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
+import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, statusText, type Meta } from "./tags.ts";
 import { loadConfig, registerFirst, DEFAULTS } from "./config.ts";
 import { view, PAGE, type Model, type Actions } from "./view.ts";
 
@@ -28,6 +28,9 @@ const HELP = [
   "Arguments fold in: tags add, -#tag removes, and the title only changes when",
   "you type one. In the pane, t then a row's digit edits it there instead, and",
   "that form replaces what's on the row, because you can see it.",
+  "",
+  "This session's tags stay pinned under the prompt, with its switcher title",
+  "when that differs from the session name.",
   "",
   "In the pane: type to filter · 1-9,0 resume · t tag · n/p page · Esc close",
 ].join("\n");
@@ -52,6 +55,9 @@ const state = {
   mode: "resume" as "resume" | "tag",
   editing: null as { id: string; text: string } | null,
   refresh: 40,
+  // The row an in-place resume switched to, standing in for this session
+  // until its own transcript reaches the index.
+  selfHint: null as Session | null,
 };
 
 const model = (): Model => ({
@@ -79,6 +85,29 @@ async function refresh($: EngineInterface): Promise<void> {
     state.syncing = false;
     $.ui.invalidate("ui.render");
   }
+  // This session may only now have reached the index.
+  await pinStatus($);
+}
+
+/**
+ * Pins this session's tags under the prompt, so you can see what you're in
+ * without opening the pane — plus its switcher title, when that isn't the name
+ * the prompt border already draws. `$.ui.status` holds one line per plugin.
+ *
+ * An in-place resume doesn't fire `session.start` again, so `resume()` passes
+ * the row it switched to as `hint`.
+ */
+async function pinStatus($: EngineInterface, hint?: Session): Promise<void> {
+  const { host, store } = state;
+  if (!host || !store) return;
+  if (hint) state.selfHint = hint;
+  try {
+    const id = await $.session.id();
+    const [sessions, names] = await Promise.all([cachedSessions(store, host), host.names().catch(() => ({}))]);
+    const self = sessions.find((x) => x.id === id) ?? state.selfHint;
+    const m = self ? metaFor(self, state.meta) : state.meta[id];
+    $.ui.status(statusText(m, (names as Record<string, string>)[self?.id ?? id]));
+  } catch { /* no line beats a broken session */ }
 }
 
 /**
@@ -103,7 +132,7 @@ async function resume($: EngineInterface, s: Session): Promise<void> {
   if (sameDir(state.isWindows, here, s.projectPath)) {
     try {
       const out = (await $.command.run({ command: "resume", args: s.id })) as { text?: string } | undefined;
-      if (!/not found/i.test(out?.text ?? "")) return;
+      if (!/not found/i.test(out?.text ?? "")) { await pinStatus($, s); return; }
     } catch { /* older builds: no /resume to run — fall through */ }
   }
   $.ui.log(resumeCommand(state.isWindows, s.projectPath, s.id));
@@ -224,6 +253,9 @@ export function register(on: On, options: PluginOptions) {
       // Every candidate taken is survivable: the pane's own hotkeys still work
       // once it is open, and a later release may free one up.
       if (!state.commandName) $.ui.log("session-switcher: no command name was free; open it from /help.");
+      // The tag line is worth having, not worth delaying start for: not awaited.
+      state.meta = await loadMeta(state.store);
+      void pinStatus($);
     }
     return next(e);
   });
@@ -243,6 +275,7 @@ export function register(on: On, options: PluginOptions) {
       const saved = mergeMeta(id, self, meta, args);
       await saveMeta(store, meta);
       state.meta = meta;
+      await pinStatus($);
       const tags = saved.tags.length ? saved.tags.map((t) => "#" + t).join(" ") : "no tags";
       return { text: saved.title ? `${tags} · “${saved.title}”` : tags };
     }
@@ -292,6 +325,8 @@ export function register(on: On, options: PluginOptions) {
       editTags: (value) => {
         const s = state.editing && state.sessions.find((x) => x.id === state.editing!.id);
         if (s && state.store) { setMeta(s, state.meta, value); void saveMeta(state.store, state.meta); }
+        // Cheap when the edited row isn't this session: the same line re-pins.
+        void pinStatus($);
         state.editing = null;
         state.mode = "resume";
         $.ui.invalidate("ui.render");

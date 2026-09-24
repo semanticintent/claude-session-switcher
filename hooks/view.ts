@@ -173,16 +173,20 @@ function row(ui: Elements, s: Session, model: Model, actions: Actions, hotkey: s
       // One meta line, not three. Ten rows have to fit the pane alongside the
       // filter and the controls, and the opening prompt is still searchable
       // whether or not it is drawn.
+      // When the line is wider than the pane, every child gets squeezed, and a
+      // squeezed Text wraps inside its own narrow column — "Projects" came out
+      // as "Project" over "s", and a long branch interleaved with the project.
+      // So the project and tags never shrink, and the branch truncates instead.
       Box({
         marginLeft: INDENT,
         children: [
-          Text({ color: colour, children: s.project }),
-          ...(s.branch ? [Text({ dimColor: true, children: ` on ${s.branch}` })] : []),
+          Box({ flexShrink: 0, children: [Text({ color: colour, children: s.project })] }),
+          ...(s.branch ? [Text({ dimColor: true, wrap: "truncate-end", children: ` on ${s.branch}` })] : []),
           Text({ dimColor: true, wrap: "truncate-end",
                  children: ` · ${s.prompts} ${s.prompts === 1 ? "prompt" : "prompts"}`
                    + (s.filesTouched ? `, ${s.filesTouched} files` : "")
                    + (s.partial ? " · sampled" : "") }),
-          ...(m?.tags ?? []).map((t) => Text({ color: "magenta", children: ` #${t}` })),
+          ...(m?.tags ?? []).map((t) => Box({ flexShrink: 0, children: [Text({ color: "magenta", children: ` #${t}` })] })),
         ],
       }),
     ],

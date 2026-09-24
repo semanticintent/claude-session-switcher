@@ -4,7 +4,7 @@ import { cachedSessions, sync } from "../hooks/scan.ts";
 import { view, spark, matches, type Model } from "../hooks/view.ts";
 import { setMeta, mergeMeta, metaFor, fingerprint, statusText, type Meta } from "../hooks/tags.ts";
 import { nodeHost, memoryStore } from "./node-host.ts";
-import { rangeArgv, sampleArgv, psPath, resumeCommand, sameDir } from "../hooks/host.ts";
+import { rangeArgv, sampleArgv, psPath, shPath, resumeCommand, sameDir } from "../hooks/host.ts";
 
 const T = join(process.env.TMPDIR ?? "/tmp", "session-switcher-fixture");
 rmSync(T, { recursive: true, force: true });
@@ -130,6 +130,9 @@ const checks: [string, boolean][] = [
   ["keeps the full cwd for resume", incremental.projectPath === "/tmp/demo" && incremental.project === "demo"],
   ["a Windows cwd draws its last folder, not the whole path", win.projectPath === WIN_CWD && win.project === "Widget.2.1"],
   ["posix resume keeps &&", resumeCommand(false, "/tmp/demo", "abc") === "cd /tmp/demo && claude --resume abc"],
+  ["posix resume quotes a path with a space",
+    resumeCommand(false, "/tmp/My Project", "abc") === "cd '/tmp/My Project' && claude --resume abc"],
+  ["posix quoting survives a quote inside the path", shPath("/tmp/it's") === "'/tmp/it'\\''s'"],
   // The line pinned under the prompt. The session name is already in the
   // prompt border, so a switcher title that repeats it is left out.
   ["status line shows tags", statusText({ tags: ["wip", "mods"] }) === "#wip #mods"],

@@ -74,14 +74,25 @@ export function sampleArgv(isWindows: boolean, path: string, lines: number, end:
 }
 
 /**
+ * POSIX shell quoting, only when the path needs it: a plain path stays readable,
+ * one with a space or a quote in it is single-quoted, with any `'` closed,
+ * escaped and reopened.
+ */
+export const shPath = (p: string) =>
+  /^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`;
+
+/**
  * What to paste to resume a session in its own directory. Windows PowerShell
  * 5.1 has no `&&` — it is a parse error there — so the Windows form spells the
  * same "only if the cd worked" with `$?`.
+ *
+ * Both forms quote the directory. An unquoted POSIX path with a space in it
+ * made `cd` fail, and the `&&` then quietly skipped the resume.
  */
 export function resumeCommand(isWindows: boolean, dir: string, id: string): string {
   return isWindows
     ? `cd ${psPath(dir)}; if ($?) { claude --resume ${id} }`
-    : `cd ${dir} && claude --resume ${id}`;
+    : `cd ${shPath(dir)} && claude --resume ${id}`;
 }
 
 /**

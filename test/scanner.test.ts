@@ -4,7 +4,7 @@ import { cachedSessions, sync } from "../hooks/scan.ts";
 import { view, spark, matches, type Model } from "../hooks/view.ts";
 import { setMeta, mergeMeta, metaFor, fingerprint, type Meta } from "../hooks/tags.ts";
 import { nodeHost, memoryStore } from "./node-host.ts";
-import { rangeArgv, sampleArgv, psPath, resumeCommand } from "../hooks/host.ts";
+import { rangeArgv, sampleArgv, psPath, resumeCommand, sameDir } from "../hooks/host.ts";
 
 const T = join(process.env.TMPDIR ?? "/tmp", "session-switcher-fixture");
 rmSync(T, { recursive: true, force: true });
@@ -130,6 +130,12 @@ const checks: [string, boolean][] = [
   ["keeps the full cwd for resume", incremental.projectPath === "/tmp/demo" && incremental.project === "demo"],
   ["a Windows cwd draws its last folder, not the whole path", win.projectPath === WIN_CWD && win.project === "Widget.2.1"],
   ["posix resume keeps &&", resumeCommand(false, "/tmp/demo", "abc") === "cd /tmp/demo && claude --resume abc"],
+  // /resume only finds the current project's sessions, so this decides between
+  // switching in place and handing over the command.
+  ["windows dirs match regardless of case, separator or trailing slash",
+    sameDir(true, "C:\\Projects", "c:/projects/") && !sameDir(true, "C:\\Projects", "C:\\src\\sample")],
+  ["posix dirs stay case-sensitive", sameDir(false, "/tmp/demo/", "/tmp/demo") && !sameDir(false, "/tmp/Demo", "/tmp/demo")],
+  ["an unknown current dir never counts as a match", !sameDir(true, "", "C:\\Projects")],
   ["windows resume has no && (a PowerShell 5.1 parse error)",
     resumeCommand(true, "C:\\it's\\x", "abc") === "cd 'C:\\it''s\\x'; if ($?) { claude --resume abc }"],
   ["picks up the git branch", incremental.branch === "main"],

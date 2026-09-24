@@ -84,6 +84,18 @@ export function resumeCommand(isWindows: boolean, dir: string, id: string): stri
     : `cd ${dir} && claude --resume ${id}`;
 }
 
+/**
+ * Whether two directories are the same project. Windows paths compare without
+ * case and with either separator: `C:\Projects` and `c:/projects/` are one place.
+ */
+export function sameDir(isWindows: boolean, a: string, b: string): boolean {
+  const norm = (p: string) => {
+    const s = isWindows ? p.replace(/\//g, "\\").toLowerCase() : p;
+    return s.replace(/[\\/]+$/, "");
+  };
+  return !!a && !!b && norm(a) === norm(b);
+}
+
 /** Splits a captured stdout chunk into whole lines, dropping a truncated tail. */
 export function wholeLines(stdout: string, dropFirstPartial = false): string[] {
   const lines = stdout.split("\n");

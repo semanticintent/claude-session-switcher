@@ -5,7 +5,7 @@
 // surface is early access and may change between releases; regenerate the
 // declarations with /plugin-types rather than trusting this file's vintage.
 import type { EngineInterface, On, PluginOptions } from "claude-code";
-import { wholeLines, rangeArgv, sampleArgv, resumeCommand, PROJECTS, SESSIONS, type FileInfo, type Host, type Store } from "./host.ts";
+import { wholeLines, rangeArgv, sampleArgv, resumeCommand, sameDir, PROJECTS, SESSIONS, type FileInfo, type Host, type Store } from "./host.ts";
 import { cachedSessions, sync, type Session } from "./scan.ts";
 import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
 import { loadConfig, registerFirst, DEFAULTS } from "./config.ts";
@@ -82,27 +82,31 @@ async function refresh($: EngineInterface): Promise<void> {
 }
 
 /**
- * Resuming is the one thing this mod cannot do for itself.
+ * Resuming works in place for a session from this project, and nowhere else.
  *
  * `$.process.run` captures a child's output and never hands it the terminal, so
  * shelling out to `claude --resume` does not switch you to anything — it starts
  * a headless second session and blocks until the timeout. `$.command.run` is the
- * right shape (it runs a slash command as if you typed it) but a probe of all 70
- * commands in a session found no `/resume` among them, so the call is attempted
- * and its rejection is expected rather than exceptional.
+ * right shape (it runs a slash command as if you typed it). A probe on 2.1.277
+ * found no `/resume` among its commands; on 2.1.281 it is there and switches
+ * immediately — but `/resume` only lists the current project's sessions.
  *
- * Until the surface offers a way to switch sessions, the honest fallback is to
- * hand you the command — with the cwd, because a session belongs to a directory
- * and resuming one from another project without it drops you in the wrong repo.
+ * One from another project comes back "Session … was not found." as the
+ * command's *output*, not a rejection, so a catch alone never saw it and the
+ * click did nothing. Those get the command to paste instead — with the cwd,
+ * because resuming one from the wrong directory drops you in the wrong repo.
  */
 async function resume($: EngineInterface, s: Session): Promise<void> {
   await $.ui.close({ id: PANE_ID }).catch(() => undefined);
   state.isOpen = false;
-  try {
-    await $.command.run({ command: "resume", args: s.id });
-  } catch {
-    $.ui.log(resumeCommand(state.isWindows, s.projectPath, s.id));
+  const here = await $.session.root().catch(() => "");
+  if (sameDir(state.isWindows, here, s.projectPath)) {
+    try {
+      const out = (await $.command.run({ command: "resume", args: s.id })) as { text?: string } | undefined;
+      if (!/not found/i.test(out?.text ?? "")) return;
+    } catch { /* older builds: no /resume to run — fall through */ }
   }
+  $.ui.log(resumeCommand(state.isWindows, s.projectPath, s.id));
 }
 
 export function register(on: On, options: PluginOptions) {

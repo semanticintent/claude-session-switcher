@@ -73,6 +73,40 @@ export function sampleArgv(isWindows: boolean, path: string, lines: number, end:
     : [end === "head" ? "head" : "tail", "-n", String(lines), path];
 }
 
+/**
+ * POSIX shell quoting, only when the path needs it: a plain path stays readable,
+ * one with a space or a quote in it is single-quoted, with any `'` closed,
+ * escaped and reopened.
+ */
+export const shPath = (p: string) =>
+  /^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * What to paste to resume a session in its own directory. Windows PowerShell
+ * 5.1 has no `&&` — it is a parse error there — so the Windows form spells the
+ * same "only if the cd worked" with `$?`.
+ *
+ * Both forms quote the directory. An unquoted POSIX path with a space in it
+ * made `cd` fail, and the `&&` then quietly skipped the resume.
+ */
+export function resumeCommand(isWindows: boolean, dir: string, id: string): string {
+  return isWindows
+    ? `cd ${psPath(dir)}; if ($?) { claude --resume ${id} }`
+    : `cd ${shPath(dir)} && claude --resume ${id}`;
+}
+
+/**
+ * Whether two directories are the same project. Windows paths compare without
+ * case and with either separator: `C:\Projects` and `c:/projects/` are one place.
+ */
+export function sameDir(isWindows: boolean, a: string, b: string): boolean {
+  const norm = (p: string) => {
+    const s = isWindows ? p.replace(/\//g, "\\").toLowerCase() : p;
+    return s.replace(/[\\/]+$/, "");
+  };
+  return !!a && !!b && norm(a) === norm(b);
+}
+
 /** Splits a captured stdout chunk into whole lines, dropping a truncated tail. */
 export function wholeLines(stdout: string, dropFirstPartial = false): string[] {
   const lines = stdout.split("\n");

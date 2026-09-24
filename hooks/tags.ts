@@ -74,6 +74,19 @@ export function mergeMeta(
   return meta;
 }
 
+/**
+ * The line pinned under the prompt: the session's tags, and its switcher title
+ * only when that isn't the name the prompt border already draws. Nothing to
+ * say is `undefined`, which clears the line rather than pinning an empty one.
+ */
+export function statusText(m: Meta | undefined, shownName?: string): string | undefined {
+  if (!m) return undefined;
+  const tags = m.tags.map((t) => "#" + t).join(" ");
+  const same = (a: string, b?: string) => !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+  const title = m.title && !same(m.title, shownName) ? `“${m.title}”` : "";
+  return [tags, title].filter(Boolean).join(" · ") || undefined;
+}
+
 /** Drops records for sessions that no longer exist, so this can't grow forever. */
 export function pruneMeta(all: Record<string, Meta>, sessions: Session[]) {
   const live = new Set(sessions.map((s) => s.id));

@@ -118,9 +118,13 @@ export function view(ui: Elements, model: Model, actions: Actions): RenderElemen
         onInput: () => {},
         onSubmit: (value: string) => actions.editTags(value),
       })
+    // Same squeeze as the meta line: in a narrow pane "Esc close" drew as
+    // "Esc" / "clos" / "e". Controls wrap onto another line as whole items;
+    // columnGap, not gap, or the wrapped line lands two blank lines down.
     : Box({
         marginTop: 1,
-        gap: 2,
+        columnGap: 2,
+        flexWrap: "wrap",
         children: [
           Button({ key: "mode", hotkey: "t", plain: true, dimColor: true,
                    label: model.mode === "tag" ? "resume mode" : "tag a session",
@@ -129,8 +133,8 @@ export function view(ui: Elements, model: Model, actions: Actions): RenderElemen
                    onPress: () => actions.turnPage(-1) }),
           Button({ key: "next", hotkey: "n", plain: true, dimColor: true, label: "next",
                    onPress: () => actions.turnPage(1) }),
-          Text({ dimColor: true, children: "Esc close" }),
-          Text({ dimColor: true, children: "· /switcher #tag tags this session" }),
+          Box({ flexShrink: 0, children: [Text({ dimColor: true, children: "Esc close" })] }),
+          Box({ flexShrink: 0, children: [Text({ dimColor: true, children: "· /switcher #tag tags this session" })] }),
         ],
       });
 
@@ -173,16 +177,20 @@ function row(ui: Elements, s: Session, model: Model, actions: Actions, hotkey: s
       // One meta line, not three. Ten rows have to fit the pane alongside the
       // filter and the controls, and the opening prompt is still searchable
       // whether or not it is drawn.
+      // When the line is wider than the pane, every child gets squeezed, and a
+      // squeezed Text wraps inside its own narrow column — "Projects" came out
+      // as "Project" over "s", and a long branch interleaved with the project.
+      // So the project and tags never shrink, and the branch truncates instead.
       Box({
         marginLeft: INDENT,
         children: [
-          Text({ color: colour, children: s.project }),
-          ...(s.branch ? [Text({ dimColor: true, children: ` on ${s.branch}` })] : []),
+          Box({ flexShrink: 0, children: [Text({ color: colour, children: s.project })] }),
+          ...(s.branch ? [Text({ dimColor: true, wrap: "truncate-end", children: ` on ${s.branch}` })] : []),
           Text({ dimColor: true, wrap: "truncate-end",
                  children: ` · ${s.prompts} ${s.prompts === 1 ? "prompt" : "prompts"}`
                    + (s.filesTouched ? `, ${s.filesTouched} files` : "")
                    + (s.partial ? " · sampled" : "") }),
-          ...(m?.tags ?? []).map((t) => Text({ color: "magenta", children: ` #${t}` })),
+          ...(m?.tags ?? []).map((t) => Box({ flexShrink: 0, children: [Text({ color: "magenta", children: ` #${t}` })] })),
         ],
       }),
     ],

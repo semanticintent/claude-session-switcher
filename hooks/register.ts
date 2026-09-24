@@ -5,9 +5,9 @@
 // surface is early access and may change between releases; regenerate the
 // declarations with /plugin-types rather than trusting this file's vintage.
 import type { EngineInterface, On, PluginOptions } from "claude-code";
-import { wholeLines, rangeArgv, sampleArgv, PROJECTS, SESSIONS, type FileInfo, type Host, type Store } from "./host.ts";
+import { wholeLines, rangeArgv, sampleArgv, resumeCommand, sameDir, PROJECTS, SESSIONS, type FileInfo, type Host, type Store } from "./host.ts";
 import { cachedSessions, sync, type Session } from "./scan.ts";
-import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, type Meta } from "./tags.ts";
+import { loadMeta, saveMeta, setMeta, mergeMeta, pruneMeta, metaFor, statusText, type Meta } from "./tags.ts";
 import { loadConfig, registerFirst, DEFAULTS } from "./config.ts";
 import { view, PAGE, type Model, type Actions } from "./view.ts";
 
@@ -29,6 +29,9 @@ const HELP = [
   "you type one. In the pane, t then a row's digit edits it there instead, and",
   "that form replaces what's on the row, because you can see it.",
   "",
+  "This session's tags stay pinned under the prompt, with its switcher title",
+  "when that differs from the session name.",
+  "",
   "In the pane: type to filter · 1-9,0 resume · t tag · n/p page · Esc close",
 ].join("\n");
 
@@ -42,6 +45,7 @@ const state = {
   host: null as Host | null,
   store: null as Store | null,
   commandName: null as string | null,
+  isWindows: false,
   isOpen: false,
   syncing: false,
   sessions: [] as Session[],
@@ -51,6 +55,9 @@ const state = {
   mode: "resume" as "resume" | "tag",
   editing: null as { id: string; text: string } | null,
   refresh: 40,
+  // The row an in-place resume switched to, standing in for this session
+  // until its own transcript reaches the index.
+  selfHint: null as Session | null,
 };
 
 const model = (): Model => ({
@@ -78,30 +85,57 @@ async function refresh($: EngineInterface): Promise<void> {
     state.syncing = false;
     $.ui.invalidate("ui.render");
   }
+  // This session may only now have reached the index.
+  await pinStatus($);
 }
 
 /**
- * Resuming is the one thing this mod cannot do for itself.
+ * Pins this session's tags under the prompt, so you can see what you're in
+ * without opening the pane — plus its switcher title, when that isn't the name
+ * the prompt border already draws. `$.ui.status` holds one line per plugin.
+ *
+ * An in-place resume doesn't fire `session.start` again, so `resume()` passes
+ * the row it switched to as `hint`.
+ */
+async function pinStatus($: EngineInterface, hint?: Session): Promise<void> {
+  const { host, store } = state;
+  if (!host || !store) return;
+  if (hint) state.selfHint = hint;
+  try {
+    const id = await $.session.id();
+    const [sessions, names] = await Promise.all([cachedSessions(store, host), host.names().catch(() => ({}))]);
+    const self = sessions.find((x) => x.id === id) ?? state.selfHint;
+    const m = self ? metaFor(self, state.meta) : state.meta[id];
+    $.ui.status(statusText(m, (names as Record<string, string>)[self?.id ?? id]));
+  } catch { /* no line beats a broken session */ }
+}
+
+/**
+ * Resuming works in place for a session from this project, and nowhere else.
  *
  * `$.process.run` captures a child's output and never hands it the terminal, so
  * shelling out to `claude --resume` does not switch you to anything — it starts
  * a headless second session and blocks until the timeout. `$.command.run` is the
- * right shape (it runs a slash command as if you typed it) but a probe of all 70
- * commands in a session found no `/resume` among them, so the call is attempted
- * and its rejection is expected rather than exceptional.
+ * right shape (it runs a slash command as if you typed it). A probe on 2.1.277
+ * found no `/resume` among its commands; on 2.1.281 it is there and switches
+ * immediately — but `/resume` only lists the current project's sessions.
  *
- * Until the surface offers a way to switch sessions, the honest fallback is to
- * hand you the command — with the cwd, because a session belongs to a directory
- * and resuming one from another project without it drops you in the wrong repo.
+ * One from another project comes back "Session … was not found." as the
+ * command's *output*, not a rejection, so a catch alone never saw it and the
+ * click did nothing. Those get the command to paste instead — with the cwd,
+ * because resuming one from the wrong directory drops you in the wrong repo.
  */
 async function resume($: EngineInterface, s: Session): Promise<void> {
   await $.ui.close({ id: PANE_ID }).catch(() => undefined);
   state.isOpen = false;
-  try {
-    await $.command.run({ command: "resume", args: s.id });
-  } catch {
-    $.ui.log(`cd ${s.projectPath} && claude --resume ${s.id}`);
+  const here = await $.session.root().catch(() => "");
+  if (sameDir(state.isWindows, here, s.projectPath)) {
+    try {
+      const out = (await $.command.run({ command: "resume", args: s.id })) as { text?: string } | undefined;
+      if (!/not found/i.test(out?.text ?? "")) { await pinStatus($, s); return; }
+    } catch { /* older builds: no /resume to run — fall through */ }
   }
+  $.ui.log(resumeCommand(state.isWindows, s.projectPath, s.id));
 }
 
 export function register(on: On, options: PluginOptions) {
@@ -118,6 +152,7 @@ export function register(on: On, options: PluginOptions) {
     const home = String((await $.env.get("HOME").catch(() => undefined))
       ?? (await $.env.get("USERPROFILE").catch(() => undefined)) ?? "");
     const isWindows = (await $.env.get("OS").catch(() => undefined)) === "Windows_NT";
+    state.isWindows = isWindows;
     if (home) {
       // Built here, not imported: `$` is only ever followed into a function
       // declared in the same file, so the engine-side Host is spelled inline.
@@ -218,6 +253,9 @@ export function register(on: On, options: PluginOptions) {
       // Every candidate taken is survivable: the pane's own hotkeys still work
       // once it is open, and a later release may free one up.
       if (!state.commandName) $.ui.log("session-switcher: no command name was free; open it from /help.");
+      // The tag line is worth having, not worth delaying start for: not awaited.
+      state.meta = await loadMeta(state.store);
+      void pinStatus($);
     }
     return next(e);
   });
@@ -237,6 +275,7 @@ export function register(on: On, options: PluginOptions) {
       const saved = mergeMeta(id, self, meta, args);
       await saveMeta(store, meta);
       state.meta = meta;
+      await pinStatus($);
       const tags = saved.tags.length ? saved.tags.map((t) => "#" + t).join(" ") : "no tags";
       return { text: saved.title ? `${tags} · “${saved.title}”` : tags };
     }
@@ -286,6 +325,8 @@ export function register(on: On, options: PluginOptions) {
       editTags: (value) => {
         const s = state.editing && state.sessions.find((x) => x.id === state.editing!.id);
         if (s && state.store) { setMeta(s, state.meta, value); void saveMeta(state.store, state.meta); }
+        // Cheap when the edited row isn't this session: the same line re-pins.
+        void pinStatus($);
         state.editing = null;
         state.mode = "resume";
         $.ui.invalidate("ui.render");

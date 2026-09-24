@@ -281,7 +281,9 @@ function strip(e: Entry, n = 24): number[] {
 }
 
 // No node:path here either — these are the only two pieces of it we need.
-const baseName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+// Either separator: a Windows cwd is `C:\a\b` and has no "/" in it, so a
+// "/"-only split handed back the whole path as the project's display name.
+const baseName = (p: string) => p.slice(Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\")) + 1);
 const dirName = (p: string) => baseName(p.slice(0, p.lastIndexOf("/")));
 const idOf = (p: string) => baseName(p).replace(/\.jsonl$/, "");
 const decodeProjectDir = (name: string) =>

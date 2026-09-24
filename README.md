@@ -38,7 +38,7 @@ hotkey is exactly one digit.
 | Key | Action |
 |---|---|
 | type | filter across title, prompt, project, branch, `#tag` |
-| 1–9, 0 | print the resume command for that row, with its directory — the mods surface can't switch sessions yet ([why](#verified-on-21278)) |
+| 1–9, 0 | resume that row — in place if it's from this project, otherwise print the command with its directory ([why](#verified-on-21278)) |
 | t | tag mode — a digit then opens that row's tag field |
 | n / p | next / previous page |
 | Esc | close the pane |
@@ -320,26 +320,31 @@ digit hotkeys, per-project colour, paging and live filtering all work as describ
 (A print-mode session has no surface, so `ui.render` never fires there — that part
 needed a real terminal to confirm.)
 
-**Resume is the one thing this mod cannot do for itself yet.** There is no
-`$.session.resume` on the surface, and the two near misses both fail:
-`$.process.run` captures a child's output and never hands it the terminal, so
-shelling out to `claude --resume` starts a *headless* second session and blocks
-until the timeout rather than switching you to anything. `$.command.run` is the
-right shape — it runs a slash command as if you typed it — but probing all 70
-commands in a session turned up no `/resume` among them. So the mod attempts it and
-treats the rejection as expected, printing the command instead:
+**Resume switches in place — within the current project.** There is no
+`$.session.resume` on the surface. `$.process.run` captures a child's output and
+never hands it the terminal, so shelling out to `claude --resume` starts a
+*headless* second session and blocks until the timeout. `$.command.run` is the
+right shape — it runs a slash command as if you typed it. On 2.1.277 a probe of all
+70 commands found no `/resume`; on 2.1.281 it is there, and picking a row switches
+you to that session immediately.
+
+`/resume` only lists the current project's sessions, though. One from another
+project comes back "Session … was not found." — as the command's output, not an
+error — so for those the mod skips the attempt and prints the command instead, with
+the directory:
 
 ```
-cd /path/to/project && claude --resume <id>
+cd /path/to/project && claude --resume <id>                  # macOS / Linux
+cd 'C:\path\to\project'; if ($?) { claude --resume <id> }    # Windows PowerShell
 ```
 
-Everything else the switcher promises works; this last step is a copy-paste until
-the surface offers a way to switch sessions. If you want it too, the
+Older builds without a runnable `/resume` get the same printed command for every
+row. Switching across projects in place still needs the surface to offer it; the
 [Mods issue](https://github.com/anthropics/claude-code/issues/91870) is the place
 to say so.
 
-The Windows read fallback has also been written and pinned by tests but never
-executed — no Windows box here.
+The Windows read fallback has been run on a real Windows machine (2.1.281) and
+works as written.
 
 `/plugin-types` isn't installed in this build, so the declarations used here are the
 2.1.277 copy from upstream (`npm run types`). Regenerate with `/plugin-types` once it

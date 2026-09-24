@@ -118,9 +118,12 @@ export function view(ui: Elements, model: Model, actions: Actions): RenderElemen
         onInput: () => {},
         onSubmit: (value: string) => actions.editTags(value),
       })
+    // Same squeeze as the meta line: in a narrow pane "Esc close" drew as
+    // "Esc" / "clos" / "e". Controls wrap onto another line as whole items.
     : Box({
         marginTop: 1,
         gap: 2,
+        flexWrap: "wrap",
         children: [
           Button({ key: "mode", hotkey: "t", plain: true, dimColor: true,
                    label: model.mode === "tag" ? "resume mode" : "tag a session",
@@ -129,8 +132,8 @@ export function view(ui: Elements, model: Model, actions: Actions): RenderElemen
                    onPress: () => actions.turnPage(-1) }),
           Button({ key: "next", hotkey: "n", plain: true, dimColor: true, label: "next",
                    onPress: () => actions.turnPage(1) }),
-          Text({ dimColor: true, children: "Esc close" }),
-          Text({ dimColor: true, children: "· /switcher #tag tags this session" }),
+          Box({ flexShrink: 0, children: [Text({ dimColor: true, children: "Esc close" })] }),
+          Box({ flexShrink: 0, children: [Text({ dimColor: true, children: "· /switcher #tag tags this session" })] }),
         ],
       });
 

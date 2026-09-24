@@ -119,10 +119,11 @@ export function view(ui: Elements, model: Model, actions: Actions): RenderElemen
         onSubmit: (value: string) => actions.editTags(value),
       })
     // Same squeeze as the meta line: in a narrow pane "Esc close" drew as
-    // "Esc" / "clos" / "e". Controls wrap onto another line as whole items.
+    // "Esc" / "clos" / "e". Controls wrap onto another line as whole items;
+    // columnGap, not gap, or the wrapped line lands two blank lines down.
     : Box({
         marginTop: 1,
-        gap: 2,
+        columnGap: 2,
         flexWrap: "wrap",
         children: [
           Button({ key: "mode", hotkey: "t", plain: true, dimColor: true,
